@@ -403,12 +403,8 @@
   <div class="sidebar-section">
     <label>API 提供商</label>
     <select id="provider" onchange="onProviderChange()">
-      <option value="openai">OpenAI</option>
-      <option value="groq">Groq</option>
-      <option value="together">Together AI</option>
-      <option value="openrouter">OpenRouter</option>
-      <option value="anthropic">Anthropic</option>
-      <option value="custom">自訂</option>
+      <option value="openai">OpenAI 相容 (/v1/chat/completions)</option>
+      <option value="anthropic">Anthropic 相容 (/v1/messages)</option>
     </select>
   </div>
 
@@ -531,31 +527,13 @@ let abortController = null;
 // 預設 providers
 const PROVIDERS = {
   openai: {
-    name: 'OpenAI',
+    name: 'OpenAI 相容',
     endpoint: 'https://api.openai.com',
     model: 'gpt-4o',
     format: 'openai'
   },
-  groq: {
-    name: 'Groq',
-    endpoint: 'https://api.groq.com/openai',
-    model: 'mixtral-8x7b-32768',
-    format: 'openai'
-  },
-  together: {
-    name: 'Together AI',
-    endpoint: 'https://api.together.xyz',
-    model: 'meta-llama/Llama-3-70b-chat-hf',
-    format: 'openai'
-  },
-  openrouter: {
-    name: 'OpenRouter',
-    endpoint: 'https://openrouter.ai/api',
-    model: 'openai/gpt-4o',
-    format: 'openai'
-  },
   anthropic: {
-    name: 'Anthropic',
+    name: 'Anthropic 相容',
     endpoint: 'https://api.anthropic.com',
     model: 'claude-sonnet-4-20250514',
     format: 'anthropic'
@@ -581,16 +559,12 @@ function onProviderChange() {
   const p = getProvider();
   const endpoint = document.getElementById('endpoint');
   const model = document.getElementById('model');
-
-  if (p === 'custom') {
-    endpoint.value = '';
-    model.value = '';
-  } else {
-    const provider = PROVIDERS[p];
-    endpoint.value = provider.endpoint;
-    model.value = provider.model;
-  }
+  const provider = PROVIDERS[p];
+  endpoint.value = '';
+  endpoint.placeholder = provider.endpoint;
+  model.value = provider.model;
   updateModelDisplay();
+  loadApiKey();
 }
 
 function toggleApiKeyVisibility() {
