@@ -824,23 +824,21 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
   if (!finalEndpoint) {
     finalEndpoint = 'https://api.openai.com/v1/chat/completions';
   } else {
-    // 檢查是否已有完整路徑
-    if (!finalEndpoint.endsWith('/chat/completions') && !finalEndpoint.endsWith('/v1')) {
-      // 檢查是否已有 /v1
-      if (!finalEndpoint.includes('/v1')) {
-        if (finalEndpoint.endsWith('/')) {
-          finalEndpoint += 'v1/chat/completions';
-        } else {
-          finalEndpoint += '/v1/chat/completions';
-        }
-      } else {
-        // 已有 /v1，補上 /chat/completions
-        if (finalEndpoint.endsWith('/')) {
-          finalEndpoint += 'chat/completions';
-        } else {
-          finalEndpoint += '/chat/completions';
-        }
-      }
+    // 移除末尾斜線
+    finalEndpoint = finalEndpoint.replace(/\/$/, '');
+    
+    // 如果已經是完整路徑，保持不變
+    if (finalEndpoint.endsWith('/chat/completions')) {
+      // 已是完整路徑
+    } else if (finalEndpoint.endsWith('/v1')) {
+      // 只有 /v1，補上 /chat/completions
+      finalEndpoint += '/chat/completions';
+    } else if (finalEndpoint.includes('/v1/')) {
+      // 有 /v1/ 但不是 /chat/completions，補上 /chat/completions
+      finalEndpoint += '/chat/completions';
+    } else {
+      // 沒有 /v1，補上 /v1/chat/completions
+      finalEndpoint += '/v1/chat/completions';
     }
   }
 
@@ -888,23 +886,18 @@ async function sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStr
   if (!finalEndpoint) {
     finalEndpoint = 'https://api.anthropic.com/v1/messages';
   } else {
-    // 檢查是否已有完整路徑
-    if (!finalEndpoint.endsWith('/messages') && !finalEndpoint.endsWith('/v1')) {
-      // 檢查是否已有 /v1
-      if (!finalEndpoint.includes('/v1')) {
-        if (finalEndpoint.endsWith('/')) {
-          finalEndpoint += 'v1/messages';
-        } else {
-          finalEndpoint += '/v1/messages';
-        }
-      } else {
-        // 已有 /v1，補上 /messages
-        if (finalEndpoint.endsWith('/')) {
-          finalEndpoint += 'messages';
-        } else {
-          finalEndpoint += '/messages';
-        }
-      }
+    // 移除末尾斜線
+    finalEndpoint = finalEndpoint.replace(/\/$/, '');
+
+    // 如果已經是完整路徑，保持不變
+    if (finalEndpoint.endsWith('/messages')) {
+      // 已是完整路徑
+    } else if (finalEndpoint.endsWith('/v1')) {
+      finalEndpoint += '/messages';
+    } else if (finalEndpoint.includes('/v1/')) {
+      finalEndpoint += '/messages';
+    } else {
+      finalEndpoint += '/v1/messages';
     }
   }
 
