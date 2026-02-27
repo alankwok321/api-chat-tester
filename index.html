@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>API Chat Tester</title>
+<title>API 聊天測試器</title>
 <style>
   :root {
     --bg: #1a1a2e;
@@ -397,86 +397,86 @@
 <!-- Sidebar -->
 <div class="sidebar">
   <div class="sidebar-header">
-    <span>⚡</span> API Chat Tester
+    <span>⚡</span> API 聊天測試器
   </div>
 
   <div class="sidebar-section">
-    <label>Provider</label>
+    <label>供應商</label>
     <select id="provider" onchange="onProviderChange()">
       <option value="openai">OpenAI</option>
       <option value="anthropic">Anthropic (Claude)</option>
-      <option value="custom">Custom (OpenAI-compatible)</option>
+      <option value="custom">自訂（OpenAI 相容）</option>
     </select>
   </div>
 
   <div class="sidebar-section">
-    <label>API Endpoint</label>
+    <label>API 端點</label>
     <input type="url" id="endpoint" value="https://api.openai.com/v1/chat/completions" placeholder="https://api.openai.com/v1/chat/completions">
   </div>
 
   <div class="sidebar-section">
-    <label>API Key</label>
+    <label>API 金鑰</label>
     <input type="password" id="apiKey" placeholder="sk-...">
   </div>
 
   <div class="sidebar-section">
-    <label>Model</label>
+    <label>模型</label>
     <input type="text" id="model" value="gpt-4o" placeholder="gpt-4o">
   </div>
 
   <div class="sidebar-section">
-    <label>System Prompt (optional)</label>
-    <textarea id="systemPrompt" placeholder="You are a helpful assistant..."></textarea>
+    <label>系統提示詞（選填）</label>
+    <textarea id="systemPrompt" placeholder="你是一個有用的助手..."></textarea>
   </div>
 
   <div class="sidebar-section">
-    <label>Parameters</label>
+    <label>參數</label>
     <div class="param-row">
       <input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1" title="Temperature">
       <input type="number" id="maxTokens" value="4096" min="1" max="200000" step="1" title="Max Tokens">
     </div>
     <div style="display:flex;gap:8px;margin-top:4px;">
-      <span style="flex:1;font-size:11px;color:var(--text-dim)">Temperature</span>
-      <span style="flex:none;width:80px;font-size:11px;color:var(--text-dim)">Max Tokens</span>
+      <span style="flex:1;font-size:11px;color:var(--text-dim)">溫度</span>
+      <span style="flex:none;width:80px;font-size:11px;color:var(--text-dim)">最大 Tokens</span>
     </div>
     <div class="param-row" style="margin-top: 12px; align-items: center;">
       <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text);text-transform:none;letter-spacing:0">
-        <input type="checkbox" id="streamToggle" checked> Stream response
+        <input type="checkbox" id="streamToggle" checked> 串流回應
       </label>
     </div>
   </div>
 
   <div class="sidebar-section">
     <button class="btn btn-primary btn-connect" onclick="testConnection()">
-      🔌 Test Connection
+      🔌 測試連線
     </button>
   </div>
 
   <div class="sidebar-footer">
     <span class="status-dot disconnected" id="statusDot"></span>
-    <span id="statusText">Not connected</span>
+    <span id="statusText">尚未連線</span>
   </div>
 </div>
 
 <!-- Main -->
 <div class="main">
   <div class="topbar">
-    <div class="topbar-left" id="modelDisplay">No model selected</div>
+    <div class="topbar-left" id="modelDisplay">尚未選擇模型</div>
     <div class="token-badge">
       <div class="token-item token-prompt">
-        <span class="label">Prompt:</span>
+        <span class="label">提示：</span>
         <span class="value" id="tokenPrompt">0</span>
       </div>
       <div class="token-item token-completion">
-        <span class="label">Completion:</span>
+        <span class="label">回覆：</span>
         <span class="value" id="tokenCompletion">0</span>
       </div>
       <div class="token-item token-total">
-        <span class="label">Total:</span>
+        <span class="label">總計：</span>
         <span class="value" id="tokenTotal">0</span>
       </div>
       <div class="token-item token-cost">
-        <span class="label">Est. Cost:</span>
+        <span class="label">預估費用：</span>
         <span class="value" id="tokenCost">$0.00</span>
       </div>
     </div>
@@ -484,9 +484,9 @@
 
   <div class="chat-area" id="chatArea">
     <div class="welcome" id="welcome">
-      <h2>⚡ API Chat Tester</h2>
-      <p>Configure your API key and endpoint in the sidebar, then start chatting to test your API connection.</p>
-      <p style="font-size:12px">Supports OpenAI, Anthropic, and any OpenAI-compatible endpoint.</p>
+      <h2>⚡ API 聊天測試器</h2>
+      <p>在左側欄設定你的 API 金鑰和端點，然後開始聊天來測試你的 API 連線。</p>
+      <p style="font-size:12px">支援 OpenAI、Anthropic 及任何 OpenAI 相容端點。</p>
     </div>
   </div>
 
@@ -495,12 +495,12 @@
   </div>
 
   <div class="actions-row">
-    <button class="btn btn-secondary" onclick="clearChat()">🗑 Clear</button>
-    <button class="btn btn-secondary" onclick="exportChat()">📋 Export</button>
+    <button class="btn btn-secondary" onclick="clearChat()">🗑 清除</button>
+    <button class="btn btn-secondary" onclick="exportChat()">📋 匯出</button>
   </div>
 
   <div class="input-area">
-    <textarea id="userInput" placeholder="Type a message... (Shift+Enter for new line)" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+    <textarea id="userInput" placeholder="輸入訊息... (Shift+Enter 換行)" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
     <button class="send-btn" id="sendBtn" onclick="sendMessage()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -552,7 +552,7 @@ function onProviderChange() {
 }
 
 function updateModelDisplay() {
-  document.getElementById('modelDisplay').textContent = document.getElementById('model').value || 'No model selected';
+  document.getElementById('modelDisplay').textContent = document.getElementById('model').value || '尚未選擇模型';
 }
 
 document.getElementById('model').addEventListener('input', updateModelDisplay);
@@ -566,9 +566,9 @@ function setStatus(state, text) {
 
 async function testConnection() {
   const key = document.getElementById('apiKey').value.trim();
-  if (!key) { alert('Please enter an API key'); return; }
+  if (!key) { alert('請輸入 API 金鑰'); return; }
 
-  setStatus('testing', 'Testing...');
+  setStatus('testing', '測試中...');
 
   try {
     const provider = getProvider();
@@ -617,9 +617,9 @@ async function testConnection() {
       }
     }
 
-    setStatus('connected', 'Connected ✓');
+    setStatus('connected', '已連線 ✓');
   } catch (e) {
-    setStatus('disconnected', 'Error: ' + e.message);
+    setStatus('disconnected', '錯誤：' + e.message);
   }
 }
 
@@ -670,16 +670,16 @@ async function sendMessage() {
   if (!text || isStreaming) return;
 
   const key = document.getElementById('apiKey').value.trim();
-  if (!key) { alert('Please enter an API key'); return; }
+  if (!key) { alert('請輸入 API 金鑰'); return; }
 
   input.value = '';
   autoResize(input);
 
-  // Add user message
+  // 新增使用者訊息
   messages.push({ role: 'user', content: text });
   addMessageEl('user', text);
 
-  // Build messages payload
+  // 建立訊息負載
   const sysPrompt = document.getElementById('systemPrompt').value.trim();
   const provider = getProvider();
   const endpoint = document.getElementById('endpoint').value.trim();
@@ -689,7 +689,7 @@ async function sendMessage() {
   const doStream = document.getElementById('streamToggle').checked;
 
   updateModelDisplay();
-  setStatus('testing', 'Generating...');
+  setStatus('testing', '生成中...');
   isStreaming = true;
   document.getElementById('sendBtn').disabled = true;
 
@@ -701,11 +701,11 @@ async function sendMessage() {
     } else {
       await sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream);
     }
-    setStatus('connected', 'Connected ✓');
+    setStatus('connected', '已連線 ✓');
   } catch (e) {
     if (e.name !== 'AbortError') {
       addMessageEl('error', '❌ ' + e.message);
-      setStatus('disconnected', 'Error');
+      setStatus('disconnected', '錯誤');
     }
   } finally {
     isStreaming = false;
@@ -794,7 +794,7 @@ async function handleOpenAIStream(res) {
     totalPromptTokens += usageData.prompt_tokens || 0;
     totalCompletionTokens += usageData.completion_tokens || 0;
   } else {
-    // Estimate tokens
+    // 估算 tokens
     const est = Math.ceil(fullContent.length / 4);
     totalCompletionTokens += est;
   }
@@ -906,9 +906,9 @@ function clearChat() {
   const area = document.getElementById('chatArea');
   area.innerHTML = `
     <div class="welcome" id="welcome">
-      <h2>⚡ API Chat Tester</h2>
-      <p>Configure your API key and endpoint in the sidebar, then start chatting to test your API connection.</p>
-      <p style="font-size:12px">Supports OpenAI, Anthropic, and any OpenAI-compatible endpoint.</p>
+      <h2>⚡ API 聊天測試器</h2>
+      <p>在左側欄設定你的 API 金鑰和端點，然後開始聊天來測試你的 API 連線。</p>
+      <p style="font-size:12px">支援 OpenAI、Anthropic 及任何 OpenAI 相容端點。</p>
     </div>`;
   updateTokenDisplay();
 }
@@ -918,7 +918,7 @@ function exportChat() {
   navigator.clipboard.writeText(text).then(() => {
     const btn = event.target;
     const orig = btn.textContent;
-    btn.textContent = '✅ Copied!';
+    btn.textContent = '✅ 已複製！';
     setTimeout(() => btn.textContent = orig, 1500);
   });
 }
