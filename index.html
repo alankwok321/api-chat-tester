@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Chat Tester</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface2: #0f3460;
+    --accent: #e94560;
+    --accent2: #533483;
+    --text: #eee;
+    --text-dim: #999;
+    --border: #2a2a4a;
+    --user-bg: #533483;
+    --assistant-bg: #0f3460;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 280px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .sidebar-header span { color: var(--accent); }
+
+  .sidebar-section {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-section label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  .sidebar-section input,
+  .sidebar-section select,
+  .sidebar-section textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .sidebar-section input:focus,
+  .sidebar-section select:focus,
+  .sidebar-section textarea:focus {
+    border-color: var(--accent);
+  }
+
+  .sidebar-section textarea {
+    resize: vertical;
+    min-height: 60px;
+    font-family: inherit;
+  }
+
+  .sidebar-section select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23999'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+
+  .param-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .param-row input {
+    flex: 1;
+  }
+
+  .param-row input[type="number"] {
+    width: 80px;
+    flex: none;
+  }
+
+  .btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+
+  .btn-primary:hover { opacity: 0.85; }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+  }
+
+  .btn-secondary:hover { background: var(--accent2); }
+
+  .btn-connect {
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  .sidebar-footer {
+    margin-top: auto;
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+
+  .status-dot.connected { background: #4ade80; }
+  .status-dot.disconnected { background: #f87171; }
+  .status-dot.testing { background: #facc15; animation: pulse 1s infinite; }
+
+  @keyframes pulse {
+    50% { opacity: 0.4; }
+  }
+
+  /* Main Area */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  /* Top Bar */
+  .topbar {
+    padding: 12px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .topbar-left {
+    font-weight: 600;
+    font-size: 15px;
+  }
+
+  .token-badge {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+  }
+
+  .token-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    background: var(--bg);
+    border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .token-item .label { color: var(--text-dim); font-size: 11px; }
+  .token-item .value { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .token-prompt .value { color: #60a5fa; }
+  .token-completion .value { color: #4ade80; }
+  .token-total .value { color: var(--accent); }
+  .token-cost .value { color: #facc15; }
+
+  /* Chat Area */
+  .chat-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .chat-area::-webkit-scrollbar { width: 6px; }
+  .chat-area::-webkit-scrollbar-track { background: transparent; }
+  .chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .message {
+    max-width: 80%;
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    line-height: 1.6;
+    font-size: 14px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    position: relative;
+  }
+
+  .message.user {
+    align-self: flex-end;
+    background: var(--user-bg);
+    border-bottom-right-radius: 4px;
+  }
+
+  .message.assistant {
+    align-self: flex-start;
+    background: var(--assistant-bg);
+    border-bottom-left-radius: 4px;
+  }
+
+  .message.system {
+    align-self: center;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-dim);
+    font-size: 13px;
+    max-width: 90%;
+  }
+
+  .message.error {
+    align-self: center;
+    background: rgba(233, 69, 96, 0.15);
+    border: 1px solid var(--accent);
+    color: #f87171;
+    font-size: 13px;
+  }
+
+  .message .role-tag {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .message .msg-tokens {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    text-align: right;
+  }
+
+  .typing-indicator {
+    align-self: flex-start;
+    padding: 12px 20px;
+    background: var(--assistant-bg);
+    border-radius: var(--radius);
+    border-bottom-left-radius: 4px;
+    display: none;
+  }
+
+  .typing-indicator span {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: var(--text-dim);
+    border-radius: 50%;
+    margin: 0 2px;
+    animation: bounce 1.4s infinite;
+  }
+
+  .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-8px); }
+  }
+
+  /* Welcome screen */
+  .welcome {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    gap: 12px;
+  }
+
+  .welcome h2 { color: var(--text); font-size: 24px; }
+  .welcome p { font-size: 14px; max-width: 400px; text-align: center; line-height: 1.6; }
+
+  /* Input Area */
+  .input-area {
+    padding: 16px 24px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+
+  .input-area textarea {
+    flex: 1;
+    padding: 12px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+    outline: none;
+    max-height: 150px;
+    min-height: 44px;
+    line-height: 1.5;
+    transition: border-color 0.2s;
+  }
+
+  .input-area textarea:focus { border-color: var(--accent); }
+
+  .send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .send-btn:hover { transform: scale(1.05); }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .send-btn svg { width: 20px; height: 20px; }
+
+  .actions-row {
+    display: flex;
+    gap: 8px;
+    padding: 0 24px 8px;
+    background: var(--surface);
+  }
+
+  .actions-row .btn { font-size: 12px; padding: 6px 12px; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .message { max-width: 95%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <span>⚡</span> API Chat Tester
+  </div>
+
+  <div class="sidebar-section">
+    <label>Provider</label>
+    <select id="provider" onchange="onProviderChange()">
+      <option value="openai">OpenAI</option>
+      <option value="anthropic">Anthropic (Claude)</option>
+      <option value="custom">Custom (OpenAI-compatible)</option>
+    </select>
+  </div>
+
+  <div class="sidebar-section">
+    <label>API Endpoint</label>
+    <input type="url" id="endpoint" value="https://api.openai.com/v1/chat/completions" placeholder="https://api.openai.com/v1/chat/completions">
+  </div>
+
+  <div class="sidebar-section">
+    <label>API Key</label>
+    <input type="password" id="apiKey" placeholder="sk-...">
+  </div>
+
+  <div class="sidebar-section">
+    <label>Model</label>
+    <input type="text" id="model" value="gpt-4o" placeholder="gpt-4o">
+  </div>
+
+  <div class="sidebar-section">
+    <label>System Prompt (optional)</label>
+    <textarea id="systemPrompt" placeholder="You are a helpful assistant..."></textarea>
+  </div>
+
+  <div class="sidebar-section">
+    <label>Parameters</label>
+    <div class="param-row">
+      <input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1" title="Temperature">
+      <input type="number" id="maxTokens" value="4096" min="1" max="200000" step="1" title="Max Tokens">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px;">
+      <span style="flex:1;font-size:11px;color:var(--text-dim)">Temperature</span>
+      <span style="flex:none;width:80px;font-size:11px;color:var(--text-dim)">Max Tokens</span>
+    </div>
+    <div class="param-row" style="margin-top: 12px; align-items: center;">
+      <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text);text-transform:none;letter-spacing:0">
+        <input type="checkbox" id="streamToggle" checked> Stream response
+      </label>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <button class="btn btn-primary btn-connect" onclick="testConnection()">
+      🔌 Test Connection
+    </button>
+  </div>
+
+  <div class="sidebar-footer">
+    <span class="status-dot disconnected" id="statusDot"></span>
+    <span id="statusText">Not connected</span>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left" id="modelDisplay">No model selected</div>
+    <div class="token-badge">
+      <div class="token-item token-prompt">
+        <span class="label">Prompt:</span>
+        <span class="value" id="tokenPrompt">0</span>
+      </div>
+      <div class="token-item token-completion">
+        <span class="label">Completion:</span>
+        <span class="value" id="tokenCompletion">0</span>
+      </div>
+      <div class="token-item token-total">
+        <span class="label">Total:</span>
+        <span class="value" id="tokenTotal">0</span>
+      </div>
+      <div class="token-item token-cost">
+        <span class="label">Est. Cost:</span>
+        <span class="value" id="tokenCost">$0.00</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="chat-area" id="chatArea">
+    <div class="welcome" id="welcome">
+      <h2>⚡ API Chat Tester</h2>
+      <p>Configure your API key and endpoint in the sidebar, then start chatting to test your API connection.</p>
+      <p style="font-size:12px">Supports OpenAI, Anthropic, and any OpenAI-compatible endpoint.</p>
+    </div>
+  </div>
+
+  <div class="typing-indicator" id="typing">
+    <span></span><span></span><span></span>
+  </div>
+
+  <div class="actions-row">
+    <button class="btn btn-secondary" onclick="clearChat()">🗑 Clear</button>
+    <button class="btn btn-secondary" onclick="exportChat()">📋 Export</button>
+  </div>
+
+  <div class="input-area">
+    <textarea id="userInput" placeholder="Type a message... (Shift+Enter for new line)" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"></line>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<script>
+// State
+let messages = [];
+let totalPromptTokens = 0;
+let totalCompletionTokens = 0;
+let isStreaming = false;
+let abortController = null;
+
+// Pricing (per 1K tokens) — rough estimates
+const PRICING = {
+  'gpt-4o': { prompt: 0.0025, completion: 0.01 },
+  'gpt-4o-mini': { prompt: 0.00015, completion: 0.0006 },
+  'gpt-4-turbo': { prompt: 0.01, completion: 0.03 },
+  'gpt-4': { prompt: 0.03, completion: 0.06 },
+  'gpt-3.5-turbo': { prompt: 0.0005, completion: 0.0015 },
+  'claude-sonnet-4-20250514': { prompt: 0.003, completion: 0.015 },
+  'claude-3-5-sonnet-20241022': { prompt: 0.003, completion: 0.015 },
+  'claude-3-opus-20240229': { prompt: 0.015, completion: 0.075 },
+  'claude-3-haiku-20240307': { prompt: 0.00025, completion: 0.00125 },
+};
+
+function getProvider() { return document.getElementById('provider').value; }
+
+function onProviderChange() {
+  const p = getProvider();
+  const endpoint = document.getElementById('endpoint');
+  const model = document.getElementById('model');
+
+  if (p === 'openai') {
+    endpoint.value = 'https://api.openai.com/v1/chat/completions';
+    model.value = 'gpt-4o';
+  } else if (p === 'anthropic') {
+    endpoint.value = 'https://api.anthropic.com/v1/messages';
+    model.value = 'claude-sonnet-4-20250514';
+  } else {
+    endpoint.value = '';
+    model.value = '';
+  }
+  updateModelDisplay();
+}
+
+function updateModelDisplay() {
+  document.getElementById('modelDisplay').textContent = document.getElementById('model').value || 'No model selected';
+}
+
+document.getElementById('model').addEventListener('input', updateModelDisplay);
+
+function setStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  const label = document.getElementById('statusText');
+  dot.className = 'status-dot ' + state;
+  label.textContent = text;
+}
+
+async function testConnection() {
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) { alert('Please enter an API key'); return; }
+
+  setStatus('testing', 'Testing...');
+
+  try {
+    const provider = getProvider();
+    const endpoint = document.getElementById('endpoint').value.trim();
+    const model = document.getElementById('model').value.trim();
+
+    let ok = false;
+
+    if (provider === 'anthropic') {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: model,
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'Hi' }]
+        })
+      });
+      ok = res.ok;
+      if (!ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `HTTP ${res.status}`);
+      }
+    } else {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${key}`
+        },
+        body: JSON.stringify({
+          model: model,
+          max_tokens: 5,
+          messages: [{ role: 'user', content: 'Hi' }]
+        })
+      });
+      ok = res.ok;
+      if (!ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `HTTP ${res.status}`);
+      }
+    }
+
+    setStatus('connected', 'Connected ✓');
+  } catch (e) {
+    setStatus('disconnected', 'Error: ' + e.message);
+  }
+}
+
+function addMessageEl(role, content, tokens) {
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.style.display = 'none';
+
+  const area = document.getElementById('chatArea');
+  const div = document.createElement('div');
+  div.className = 'message ' + role;
+
+  const roleTag = document.createElement('div');
+  roleTag.className = 'role-tag';
+  roleTag.textContent = role;
+  div.appendChild(roleTag);
+
+  const body = document.createElement('div');
+  body.textContent = content;
+  div.appendChild(body);
+
+  if (tokens) {
+    const tok = document.createElement('div');
+    tok.className = 'msg-tokens';
+    tok.textContent = tokens;
+    div.appendChild(tok);
+  }
+
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+  return body;
+}
+
+function updateTokenDisplay() {
+  const total = totalPromptTokens + totalCompletionTokens;
+  document.getElementById('tokenPrompt').textContent = totalPromptTokens.toLocaleString();
+  document.getElementById('tokenCompletion').textContent = totalCompletionTokens.toLocaleString();
+  document.getElementById('tokenTotal').textContent = total.toLocaleString();
+
+  const model = document.getElementById('model').value.trim();
+  const pricing = PRICING[model] || { prompt: 0.002, completion: 0.008 };
+  const cost = (totalPromptTokens / 1000 * pricing.prompt) + (totalCompletionTokens / 1000 * pricing.completion);
+  document.getElementById('tokenCost').textContent = '$' + cost.toFixed(4);
+}
+
+async function sendMessage() {
+  const input = document.getElementById('userInput');
+  const text = input.value.trim();
+  if (!text || isStreaming) return;
+
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) { alert('Please enter an API key'); return; }
+
+  input.value = '';
+  autoResize(input);
+
+  // Add user message
+  messages.push({ role: 'user', content: text });
+  addMessageEl('user', text);
+
+  // Build messages payload
+  const sysPrompt = document.getElementById('systemPrompt').value.trim();
+  const provider = getProvider();
+  const endpoint = document.getElementById('endpoint').value.trim();
+  const model = document.getElementById('model').value.trim();
+  const temp = parseFloat(document.getElementById('temperature').value) || 0.7;
+  const maxTok = parseInt(document.getElementById('maxTokens').value) || 4096;
+  const doStream = document.getElementById('streamToggle').checked;
+
+  updateModelDisplay();
+  setStatus('testing', 'Generating...');
+  isStreaming = true;
+  document.getElementById('sendBtn').disabled = true;
+
+  abortController = new AbortController();
+
+  try {
+    if (provider === 'anthropic') {
+      await sendAnthropic(key, endpoint, model, sysPrompt, temp, maxTok, doStream);
+    } else {
+      await sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream);
+    }
+    setStatus('connected', 'Connected ✓');
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      addMessageEl('error', '❌ ' + e.message);
+      setStatus('disconnected', 'Error');
+    }
+  } finally {
+    isStreaming = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('typing').style.display = 'none';
+    abortController = null;
+  }
+}
+
+async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
+  const apiMessages = [];
+  if (sysPrompt) apiMessages.push({ role: 'system', content: sysPrompt });
+  apiMessages.push(...messages);
+
+  const body = {
+    model, messages: apiMessages, temperature: temp, max_tokens: maxTok, stream: doStream
+  };
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    body: JSON.stringify(body),
+    signal: abortController.signal
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  if (doStream) {
+    await handleOpenAIStream(res);
+  } else {
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    messages.push({ role: 'assistant', content });
+
+    const usage = data.usage || {};
+    totalPromptTokens += usage.prompt_tokens || 0;
+    totalCompletionTokens += usage.completion_tokens || 0;
+
+    addMessageEl('assistant', content, `${usage.prompt_tokens || '?'}p / ${usage.completion_tokens || '?'}c`);
+    updateTokenDisplay();
+  }
+}
+
+async function handleOpenAIStream(res) {
+  const bodyEl = addMessageEl('assistant', '');
+  let fullContent = '';
+  let usageData = null;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+      if (data === '[DONE]') continue;
+
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullContent += delta;
+          bodyEl.textContent = fullContent;
+          document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+        }
+        if (parsed.usage) usageData = parsed.usage;
+      } catch {}
+    }
+  }
+
+  messages.push({ role: 'assistant', content: fullContent });
+
+  if (usageData) {
+    totalPromptTokens += usageData.prompt_tokens || 0;
+    totalCompletionTokens += usageData.completion_tokens || 0;
+  } else {
+    // Estimate tokens
+    const est = Math.ceil(fullContent.length / 4);
+    totalCompletionTokens += est;
+  }
+
+  updateTokenDisplay();
+}
+
+async function sendAnthropic(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
+  const body = {
+    model, max_tokens: maxTok, temperature: temp,
+    messages: messages.map(m => ({ role: m.role, content: m.content })),
+    stream: doStream
+  };
+  if (sysPrompt) body.system = sysPrompt;
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body),
+    signal: abortController.signal
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  if (doStream) {
+    await handleAnthropicStream(res);
+  } else {
+    const data = await res.json();
+    const content = data.content?.map(b => b.text).join('') || '';
+    messages.push({ role: 'assistant', content });
+
+    const usage = data.usage || {};
+    totalPromptTokens += usage.input_tokens || 0;
+    totalCompletionTokens += usage.output_tokens || 0;
+
+    addMessageEl('assistant', content, `${usage.input_tokens || '?'}p / ${usage.output_tokens || '?'}c`);
+    updateTokenDisplay();
+  }
+}
+
+async function handleAnthropicStream(res) {
+  const bodyEl = addMessageEl('assistant', '');
+  let fullContent = '';
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+
+      try {
+        const parsed = JSON.parse(trimmed.slice(6));
+
+        if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+          fullContent += parsed.delta.text;
+          bodyEl.textContent = fullContent;
+          document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+        }
+
+        if (parsed.type === 'message_start' && parsed.message?.usage) {
+          totalPromptTokens += parsed.message.usage.input_tokens || 0;
+        }
+
+        if (parsed.type === 'message_delta' && parsed.usage) {
+          totalCompletionTokens += parsed.usage.output_tokens || 0;
+        }
+      } catch {}
+    }
+  }
+
+  messages.push({ role: 'assistant', content: fullContent });
+  updateTokenDisplay();
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+}
+
+function clearChat() {
+  messages = [];
+  totalPromptTokens = 0;
+  totalCompletionTokens = 0;
+  const area = document.getElementById('chatArea');
+  area.innerHTML = `
+    <div class="welcome" id="welcome">
+      <h2>⚡ API Chat Tester</h2>
+      <p>Configure your API key and endpoint in the sidebar, then start chatting to test your API connection.</p>
+      <p style="font-size:12px">Supports OpenAI, Anthropic, and any OpenAI-compatible endpoint.</p>
+    </div>`;
+  updateTokenDisplay();
+}
+
+function exportChat() {
+  const text = messages.map(m => `[${m.role}]\n${m.content}`).join('\n\n---\n\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+</script>
+</body>
+</html>
