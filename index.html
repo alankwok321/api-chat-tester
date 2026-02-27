@@ -415,6 +415,14 @@
   </div>
 
   <div class="sidebar-section">
+    <label>API 格式</label>
+    <select id="apiFormat" onchange="onFormatChange()">
+      <option value="chat">Chat Completions (/v1/chat/completions)</option>
+      <option value="messages">Messages (/v1/messages)</option>
+    </select>
+  </div>
+
+  <div class="sidebar-section">
     <label>API 金鑰</label>
     <input type="password" id="apiKey" placeholder="sk-...">
   </div>
@@ -537,11 +545,14 @@ function onProviderChange() {
   const p = getProvider();
   const endpoint = document.getElementById('endpoint');
   const model = document.getElementById('model');
+  const format = document.getElementById('apiFormat');
 
   if (p === 'openai') {
+    format.value = 'chat';
     endpoint.value = 'https://api.openai.com/v1/chat/completions';
     model.value = 'gpt-4o';
   } else if (p === 'anthropic') {
+    format.value = 'messages';
     endpoint.value = 'https://api.anthropic.com/v1/messages';
     model.value = 'claude-sonnet-4-20250514';
   } else {
@@ -549,6 +560,17 @@ function onProviderChange() {
     model.value = '';
   }
   updateModelDisplay();
+}
+
+function onFormatChange() {
+  const format = document.getElementById('apiFormat').value;
+  const endpoint = document.getElementById('endpoint');
+  
+  if (format === 'chat') {
+    endpoint.value = 'https://api.openai.com/v1/chat/completions';
+  } else if (format === 'messages') {
+    endpoint.value = 'https://api.anthropic.com/v1/messages';
+  }
 }
 
 function updateModelDisplay() {
@@ -684,6 +706,7 @@ async function sendMessage() {
   const provider = getProvider();
   const endpoint = document.getElementById('endpoint').value.trim();
   const model = document.getElementById('model').value.trim();
+  const format = document.getElementById('apiFormat').value;
   const temp = parseFloat(document.getElementById('temperature').value) || 0.7;
   const maxTok = parseInt(document.getElementById('maxTokens').value) || 4096;
   const doStream = document.getElementById('streamToggle').checked;
@@ -696,8 +719,8 @@ async function sendMessage() {
   abortController = new AbortController();
 
   try {
-    if (provider === 'anthropic') {
-      await sendAnthropic(key, endpoint, model, sysPrompt, temp, maxTok, doStream);
+    if (format === 'messages') {
+      await sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStream);
     } else {
       await sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream);
     }
@@ -724,7 +747,7 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
     model, messages: apiMessages, temperature: temp, max_tokens: maxTok, stream: doStream
   };
 
-  addMessageEl('system', `📤 OpenAI API 呼叫\n端點: ${endpoint}\n模型: ${model}`);
+  addMessageEl('system', `📤 Chat Completions API\n端點: ${endpoint}\n模型: ${model}`);
 
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -750,6 +773,49 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
     totalCompletionTokens += usage.completion_tokens || 0;
 
     addMessageEl('assistant', content, `${usage.prompt_tokens || '?'}p / ${usage.completion_tokens || '?'}c`);
+    updateTokenDisplay();
+  }
+}
+
+async function sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
+  const body = {
+    model, max_tokens: maxTok, temperature: temp,
+    messages: messages.map(m => ({ role: m.role, content: m.content })),
+    stream: doStream
+  };
+  if (sysPrompt) body.system = sysPrompt;
+
+  addMessageEl('system', `📤 Messages API\n端點: ${endpoint}\n模型: ${model}`);
+
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body),
+    signal: abortController.signal
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  }
+
+  if (doStream) {
+    await handleMessagesStream(res);
+  } else {
+    const data = await res.json();
+    const content = data.content?.map(b => b.text).join('') || '';
+    messages.push({ role: 'assistant', content });
+
+    const usage = data.usage || {};
+    totalPromptTokens += usage.input_tokens || 0;
+    totalCompletionTokens += usage.output_tokens || 0;
+
+    addMessageEl('assistant', content, `${usage.input_tokens || '?'}p / ${usage.output_tokens || '?'}c`);
     updateTokenDisplay();
   }
 }
@@ -848,6 +914,50 @@ async function sendAnthropic(key, endpoint, model, sysPrompt, temp, maxTok, doSt
 }
 
 async function handleAnthropicStream(res) {
+  const bodyEl = addMessageEl('assistant', '');
+  let fullContent = '';
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+
+      try {
+        const parsed = JSON.parse(trimmed.slice(6));
+
+        if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+          fullContent += parsed.delta.text;
+          bodyEl.textContent = fullContent;
+          document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+        }
+
+        if (parsed.type === 'message_start' && parsed.message?.usage) {
+          totalPromptTokens += parsed.message.usage.input_tokens || 0;
+        }
+
+        if (parsed.type === 'message_delta' && parsed.usage) {
+          totalCompletionTokens += parsed.usage.output_tokens || 0;
+        }
+      } catch {}
+    }
+  }
+
+  messages.push({ role: 'assistant', content: fullContent });
+  updateTokenDisplay();
+}
+
+async function handleMessagesStream(res) {
   const bodyEl = addMessageEl('assistant', '');
   let fullContent = '';
 
