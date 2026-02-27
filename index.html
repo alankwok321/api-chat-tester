@@ -438,6 +438,7 @@
       <input type="text" id="model" value="gpt-4o" placeholder="gpt-4o" style="flex:1;" list="modelList">
       <button class="btn btn-secondary" onclick="fetchModelList()" style="padding:10px 12px;width:auto;">🔄</button>
     </div>
+    <datalist id="modelList"></datalist>
   </div>
 
   <div class="sidebar-section">
@@ -664,28 +665,18 @@ async function fetchModelList() {
 }
 
 function updateModelDropdown(models) {
-  const modelInput = document.getElementById('model');
+  const datalist = document.getElementById('modelList');
+  datalist.innerHTML = '';
   
-  // 如果已有 datalist，移除
-  let datalist = document.getElementById('modelList');
-  if (datalist) datalist.remove();
-  
-  // 建立新的 datalist
-  datalist = document.createElement('datalist');
-  datalist.id = 'modelList';
   models.forEach(m => {
     const option = document.createElement('option');
     option.value = m;
     datalist.appendChild(option);
   });
-  document.body.appendChild(datalist);
-  
-  // 連結到 input
-  modelInput.setAttribute('list', 'modelList');
   
   // 設定第一個模型為預設
   if (models.length > 0) {
-    modelInput.value = models[0];
+    document.getElementById('model').value = models[0];
     updateModelDisplay();
   }
 }
