@@ -401,25 +401,16 @@
   </div>
 
   <div class="sidebar-section">
-    <label>供應商</label>
+    <label>API 提供商</label>
     <select id="provider" onchange="onProviderChange()">
-      <option value="openai">OpenAI</option>
-      <option value="anthropic">Anthropic (Claude)</option>
-      <option value="custom">自訂（OpenAI 相容）</option>
+      <option value="openai">OpenAI 相容 (/v1/chat/completions)</option>
+      <option value="anthropic">Anthropic 相容 (/v1/messages)</option>
     </select>
   </div>
 
   <div class="sidebar-section">
     <label>API 端點</label>
     <input type="url" id="endpoint" value="https://api.openai.com/v1/chat/completions" placeholder="https://api.openai.com/v1/chat/completions">
-  </div>
-
-  <div class="sidebar-section">
-    <label>API 格式</label>
-    <select id="apiFormat" onchange="onFormatChange()">
-      <option value="chat">Chat Completions (/v1/chat/completions)</option>
-      <option value="messages">Messages (/v1/messages)</option>
-    </select>
   </div>
 
   <div class="sidebar-section">
@@ -545,32 +536,15 @@ function onProviderChange() {
   const p = getProvider();
   const endpoint = document.getElementById('endpoint');
   const model = document.getElementById('model');
-  const format = document.getElementById('apiFormat');
 
   if (p === 'openai') {
-    format.value = 'chat';
     endpoint.value = 'https://api.openai.com/v1/chat/completions';
     model.value = 'gpt-4o';
   } else if (p === 'anthropic') {
-    format.value = 'messages';
     endpoint.value = 'https://api.anthropic.com/v1/messages';
     model.value = 'claude-sonnet-4-20250514';
-  } else {
-    endpoint.value = '';
-    model.value = '';
   }
   updateModelDisplay();
-}
-
-function onFormatChange() {
-  const format = document.getElementById('apiFormat').value;
-  const endpoint = document.getElementById('endpoint');
-  
-  if (format === 'chat') {
-    endpoint.value = 'https://api.openai.com/v1/chat/completions';
-  } else if (format === 'messages') {
-    endpoint.value = 'https://api.anthropic.com/v1/messages';
-  }
 }
 
 function updateModelDisplay() {
@@ -706,7 +680,6 @@ async function sendMessage() {
   const provider = getProvider();
   const endpoint = document.getElementById('endpoint').value.trim();
   const model = document.getElementById('model').value.trim();
-  const format = document.getElementById('apiFormat').value;
   const temp = parseFloat(document.getElementById('temperature').value) || 0.7;
   const maxTok = parseInt(document.getElementById('maxTokens').value) || 4096;
   const doStream = document.getElementById('streamToggle').checked;
@@ -719,7 +692,7 @@ async function sendMessage() {
   abortController = new AbortController();
 
   try {
-    if (format === 'messages') {
+    if (provider === 'anthropic') {
       await sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStream);
     } else {
       await sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream);
@@ -747,7 +720,7 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
     model, messages: apiMessages, temperature: temp, max_tokens: maxTok, stream: doStream
   };
 
-  addMessageEl('system', `📤 Chat Completions API\n端點: ${endpoint}\n模型: ${model}`);
+  addMessageEl('system', `📤 OpenAI 相容 API\n端點: ${endpoint}\n模型: ${model}`);
 
   const res = await fetch(endpoint, {
     method: 'POST',
