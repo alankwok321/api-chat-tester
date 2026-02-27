@@ -724,6 +724,8 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
     model, messages: apiMessages, temperature: temp, max_tokens: maxTok, stream: doStream
   };
 
+  addMessageEl('system', `📤 OpenAI API 呼叫\n端點: ${endpoint}\n模型: ${model}`);
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
@@ -809,6 +811,8 @@ async function sendAnthropic(key, endpoint, model, sysPrompt, temp, maxTok, doSt
     stream: doStream
   };
   if (sysPrompt) body.system = sysPrompt;
+
+  addMessageEl('system', `📤 Anthropic API 呼叫\n端點: ${endpoint}\n模型: ${model}`);
 
   const res = await fetch(endpoint, {
     method: 'POST',
