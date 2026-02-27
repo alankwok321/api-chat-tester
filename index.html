@@ -823,11 +823,24 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
   let finalEndpoint = endpoint.trim();
   if (!finalEndpoint) {
     finalEndpoint = 'https://api.openai.com/v1/chat/completions';
-  } else if (!finalEndpoint.includes('/v1/')) {
-    if (finalEndpoint.endsWith('/')) {
-      finalEndpoint += 'v1/chat/completions';
-    } else {
-      finalEndpoint += '/v1/chat/completions';
+  } else {
+    // 檢查是否已有完整路徑
+    if (!finalEndpoint.endsWith('/chat/completions') && !finalEndpoint.endsWith('/v1')) {
+      // 檢查是否已有 /v1
+      if (!finalEndpoint.includes('/v1')) {
+        if (finalEndpoint.endsWith('/')) {
+          finalEndpoint += 'v1/chat/completions';
+        } else {
+          finalEndpoint += '/v1/chat/completions';
+        }
+      } else {
+        // 已有 /v1，補上 /chat/completions
+        if (finalEndpoint.endsWith('/')) {
+          finalEndpoint += 'chat/completions';
+        } else {
+          finalEndpoint += '/chat/completions';
+        }
+      }
     }
   }
 
@@ -874,11 +887,24 @@ async function sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStr
   let finalEndpoint = endpoint.trim();
   if (!finalEndpoint) {
     finalEndpoint = 'https://api.anthropic.com/v1/messages';
-  } else if (!finalEndpoint.includes('/v1/')) {
-    if (finalEndpoint.endsWith('/')) {
-      finalEndpoint += 'v1/messages';
-    } else {
-      finalEndpoint += '/v1/messages';
+  } else {
+    // 檢查是否已有完整路徑
+    if (!finalEndpoint.endsWith('/messages') && !finalEndpoint.endsWith('/v1')) {
+      // 檢查是否已有 /v1
+      if (!finalEndpoint.includes('/v1')) {
+        if (finalEndpoint.endsWith('/')) {
+          finalEndpoint += 'v1/messages';
+        } else {
+          finalEndpoint += '/v1/messages';
+        }
+      } else {
+        // 已有 /v1，補上 /messages
+        if (finalEndpoint.endsWith('/')) {
+          finalEndpoint += 'messages';
+        } else {
+          finalEndpoint += '/messages';
+        }
+      }
     }
   }
 
