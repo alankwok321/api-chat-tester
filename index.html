@@ -410,7 +410,7 @@
 
   <div class="sidebar-section">
     <label>API 端點</label>
-    <input type="url" id="endpoint" value="https://api.openai.com/v1/chat/completions" placeholder="https://api.openai.com/v1/chat/completions">
+    <input type="url" id="endpoint" placeholder="https://api.openai.com/v1/chat/completions">
   </div>
 
   <div class="sidebar-section">
@@ -538,10 +538,12 @@ function onProviderChange() {
   const model = document.getElementById('model');
 
   if (p === 'openai') {
-    endpoint.value = 'https://api.openai.com/v1/chat/completions';
+    endpoint.value = '';
+    endpoint.placeholder = 'https://api.openai.com/v1/chat/completions';
     model.value = 'gpt-4o';
   } else if (p === 'anthropic') {
-    endpoint.value = 'https://api.anthropic.com/v1/messages';
+    endpoint.value = '';
+    endpoint.placeholder = 'https://api.anthropic.com/v1/messages';
     model.value = 'claude-sonnet-4-20250514';
   }
   updateModelDisplay();
@@ -712,6 +714,18 @@ async function sendMessage() {
 }
 
 async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
+  // 自動補上路徑
+  let finalEndpoint = endpoint.trim();
+  if (!finalEndpoint) {
+    finalEndpoint = 'https://api.openai.com/v1/chat/completions';
+  } else if (!finalEndpoint.includes('/v1/')) {
+    if (finalEndpoint.endsWith('/')) {
+      finalEndpoint += 'v1/chat/completions';
+    } else {
+      finalEndpoint += '/v1/chat/completions';
+    }
+  }
+
   const apiMessages = [];
   if (sysPrompt) apiMessages.push({ role: 'system', content: sysPrompt });
   apiMessages.push(...messages);
@@ -720,9 +734,9 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
     model, messages: apiMessages, temperature: temp, max_tokens: maxTok, stream: doStream
   };
 
-  addMessageEl('system', `📤 OpenAI 相容 API\n端點: ${endpoint}\n模型: ${model}`);
+  addMessageEl('system', `📤 OpenAI 相容 API\n端點: ${finalEndpoint}\n模型: ${model}`);
 
-  const res = await fetch(endpoint, {
+  const res = await fetch(finalEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
     body: JSON.stringify(body),
@@ -751,6 +765,18 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
 }
 
 async function sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
+  // 自動補上路徑
+  let finalEndpoint = endpoint.trim();
+  if (!finalEndpoint) {
+    finalEndpoint = 'https://api.anthropic.com/v1/messages';
+  } else if (!finalEndpoint.includes('/v1/')) {
+    if (finalEndpoint.endsWith('/')) {
+      finalEndpoint += 'v1/messages';
+    } else {
+      finalEndpoint += '/v1/messages';
+    }
+  }
+
   const body = {
     model, max_tokens: maxTok, temperature: temp,
     messages: messages.map(m => ({ role: m.role, content: m.content })),
@@ -758,9 +784,9 @@ async function sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStr
   };
   if (sysPrompt) body.system = sysPrompt;
 
-  addMessageEl('system', `📤 Messages API\n端點: ${endpoint}\n模型: ${model}`);
+  addMessageEl('system', `📤 Anthropic 相容 API\n端點: ${finalEndpoint}\n模型: ${model}`);
 
-  const res = await fetch(endpoint, {
+  const res = await fetch(finalEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
