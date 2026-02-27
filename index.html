@@ -1220,10 +1220,12 @@ function clearChat() {
 function exportChat() {
   const text = messages.map(m => `[${m.role}]\n${m.content}`).join('\n\n---\n\n');
   navigator.clipboard.writeText(text).then(() => {
-    const btn = event.target;
+    const btn = document.querySelector('.actions-row .btn:nth-child(2)');
     const orig = btn.textContent;
     btn.textContent = '✅ 已複製！';
     setTimeout(() => btn.textContent = orig, 1500);
+  }).catch(err => {
+    alert('複製失敗：' + err.message);
   });
 }
 </script>
