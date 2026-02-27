@@ -410,13 +410,7 @@
 
   <div class="sidebar-section">
     <label>API 端點</label>
-    <div style="display:flex;gap:8px;margin-bottom:8px;">
-      <input type="url" id="endpoint" placeholder="https://api.openai.com" style="flex:1;">
-      <button class="btn btn-secondary" onclick="saveEndpoint()" style="padding:10px 12px;width:auto;">💾</button>
-    </div>
-    <select id="savedEndpoints" onchange="loadEndpoint()" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none;">
-      <option value="">-- 選擇已儲存的端點 --</option>
-    </select>
+    <input type="url" id="endpoint" placeholder="https://api.openai.com">
   </div>
 
   <div class="sidebar-section">
@@ -425,9 +419,16 @@
       <input type="password" id="apiKey" placeholder="sk-..." style="flex:1;">
       <button class="btn btn-secondary" onclick="toggleApiKeyVisibility()" style="padding:10px 12px;width:auto;">👁</button>
     </div>
-    <div style="display:flex;gap:8px;margin-top:8px;">
-      <button class="btn btn-secondary" onclick="saveApiKey()" style="flex:1;">💾 儲存</button>
-      <button class="btn btn-secondary" onclick="clearApiKey()" style="flex:1;">🗑 清除</button>
+  </div>
+
+  <div class="sidebar-section">
+    <label>已儲存的設定</label>
+    <select id="savedProfiles" onchange="loadProfile()" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none;margin-bottom:8px;">
+      <option value="">-- 選擇已儲存的設定 --</option>
+    </select>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-secondary" onclick="saveProfile()" style="flex:1;">💾 儲存設定</button>
+      <button class="btn btn-secondary" onclick="deleteProfile()" style="flex:1;">🗑 刪除</button>
     </div>
   </div>
 
@@ -570,8 +571,7 @@ function onProviderChange() {
   endpoint.placeholder = provider.endpoint;
   model.value = provider.model;
   updateModelDisplay();
-  loadApiKey();
-  updateEndpointList();
+  updateProfileList();
 }
 
 function toggleApiKeyVisibility() {
@@ -579,71 +579,69 @@ function toggleApiKeyVisibility() {
   input.type = input.type === 'password' ? 'text' : 'password';
 }
 
-function saveApiKey() {
-  const key = document.getElementById('apiKey').value.trim();
-  const provider = getProvider();
-  if (!key) { alert('請輸入 API 金鑰'); return; }
-  localStorage.setItem('apiKey_' + provider, key);
-  alert('✅ API 金鑰已儲存');
-}
-
-function clearApiKey() {
-  const provider = getProvider();
-  localStorage.removeItem('apiKey_' + provider);
-  document.getElementById('apiKey').value = '';
-  alert('✅ API 金鑰已清除');
-}
-
-function loadApiKey() {
-  const provider = getProvider();
-  const saved = localStorage.getItem('apiKey_' + provider);
-  if (saved) {
-    document.getElementById('apiKey').value = saved;
-  }
-}
-
-function saveEndpoint() {
+function saveProfile() {
   const provider = getProvider();
   const endpoint = document.getElementById('endpoint').value.trim();
-  if (!endpoint) { alert('請輸入 API 端點'); return; }
+  const apiKey = document.getElementById('apiKey').value.trim();
   
-  let saved = JSON.parse(localStorage.getItem('endpoints_' + provider) || '{}');
-  const name = prompt('為此端點命名（例如：My Groq）:');
+  if (!endpoint || !apiKey) { 
+    alert('請輸入 API 端點和金鑰'); 
+    return; 
+  }
+  
+  const name = prompt('為此設定命名（例如：My Groq Setup）:');
   if (!name) return;
   
-  saved[name] = endpoint;
-  localStorage.setItem('endpoints_' + provider, JSON.stringify(saved));
-  updateEndpointList();
-  alert('✅ 端點已儲存');
+  let profiles = JSON.parse(localStorage.getItem('profiles_' + provider) || '{}');
+  profiles[name] = { endpoint, apiKey };
+  localStorage.setItem('profiles_' + provider, JSON.stringify(profiles));
+  updateProfileList();
+  alert('✅ 設定已儲存');
 }
 
-function loadEndpoint() {
-  const select = document.getElementById('savedEndpoints');
+function loadProfile() {
+  const select = document.getElementById('savedProfiles');
   const name = select.value;
   if (!name) return;
   
   const provider = getProvider();
-  const saved = JSON.parse(localStorage.getItem('endpoints_' + provider) || '{}');
-  if (saved[name]) {
-    document.getElementById('endpoint').value = saved[name];
+  const profiles = JSON.parse(localStorage.getItem('profiles_' + provider) || '{}');
+  if (profiles[name]) {
+    document.getElementById('endpoint').value = profiles[name].endpoint;
+    document.getElementById('apiKey').value = profiles[name].apiKey;
   }
 }
 
-function updateEndpointList() {
+function deleteProfile() {
+  const select = document.getElementById('savedProfiles');
+  const name = select.value;
+  if (!name) { alert('請選擇要刪除的設定'); return; }
+  
+  if (!confirm('確定要刪除「' + name + '」嗎？')) return;
+  
   const provider = getProvider();
-  const select = document.getElementById('savedEndpoints');
-  const saved = JSON.parse(localStorage.getItem('endpoints_' + provider) || '{}');
+  let profiles = JSON.parse(localStorage.getItem('profiles_' + provider) || '{}');
+  delete profiles[name];
+  localStorage.setItem('profiles_' + provider, JSON.stringify(profiles));
+  updateProfileList();
+  alert('✅ 設定已刪除');
+}
+
+function updateProfileList() {
+  const provider = getProvider();
+  const select = document.getElementById('savedProfiles');
+  const profiles = JSON.parse(localStorage.getItem('profiles_' + provider) || '{}');
   
   // 保留第一個選項
   const firstOption = select.options[0];
   select.innerHTML = '';
   select.appendChild(firstOption);
   
-  // 新增已儲存的端點
-  for (const name in saved) {
+  // 新增已儲存的設定
+  for (const name in profiles) {
     const option = document.createElement('option');
     option.value = name;
-    option.textContent = name + ' (' + saved[name] + ')';
+    option.textContent = name;
     select.appendChild(option);
   }
 }
