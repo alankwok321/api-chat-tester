@@ -1009,6 +1009,67 @@ function buildAnthropicMessageContent(text, image) {
   return parts;
 }
 
+function normalizeDataUrl(mimeType, data) {
+  if (!data) return null;
+  if (typeof data === 'string' && data.startsWith('data:image/')) return data;
+  const mime = mimeType || 'image/png';
+  return `data:${mime};base64,${data}`;
+}
+
+function extractOpenAIOutput(message) {
+  const result = { text: '', imageUrl: null };
+  if (!message) return result;
+
+  const content = message.content;
+  if (typeof content === 'string') {
+    result.text = content;
+  } else if (Array.isArray(content)) {
+    for (const part of content) {
+      if (!part) continue;
+      if (part.type === 'text' && typeof part.text === 'string') result.text += part.text;
+      if (part.type === 'output_text' && typeof part.text === 'string') result.text += part.text;
+      if (part.type === 'image_url' && part.image_url?.url) result.imageUrl = part.image_url.url;
+      if (part.type === 'image' && part.image_url?.url) result.imageUrl = part.image_url.url;
+      if (part.type === 'input_image' && part.image_url?.url) result.imageUrl = part.image_url.url;
+      if (part.type === 'output_image' && part.result) result.imageUrl = normalizeDataUrl(part.mime_type, part.result);
+      if (part.type === 'output_image' && part.image_base64) result.imageUrl = normalizeDataUrl(part.mime_type, part.image_base64);
+      if (part.type === 'file' && part.file_data) result.imageUrl = normalizeDataUrl(part.mime_type, part.file_data);
+      if (part.type === 'refusal' && typeof part.refusal === 'string') result.text += part.refusal;
+    }
+  }
+
+  if (!result.imageUrl) {
+    const b64 = message.image_base64 || message.b64_json || message.result;
+    const mime = message.mime_type || message.media_type || 'image/png';
+    if (b64) result.imageUrl = normalizeDataUrl(mime, b64);
+  }
+
+  return result;
+}
+
+function extractAnthropicOutput(data) {
+  const result = { text: '', imageUrl: null };
+  const blocks = data?.content || [];
+  for (const block of blocks) {
+    if (!block) continue;
+    if (block.type === 'text' && typeof block.text === 'string') result.text += block.text;
+    if (block.type === 'image' && block.source?.type === 'base64') {
+      result.imageUrl = normalizeDataUrl(block.source.media_type, block.source.data);
+    }
+  }
+  return result;
+}
+
+function extractImageDataFromText(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed.startsWith('data:image/')) return trimmed;
+  if (/^[A-Za-z0-9+/=\s]+$/.test(trimmed) && trimmed.replace(/\s+/g, '').length > 200) {
+    return normalizeDataUrl('image/png', trimmed.replace(/\s+/g, ''));
+  }
+  return null;
+}
+
 function updateTokenDisplay() {
   const total = totalPromptTokens + totalCompletionTokens;
   document.getElementById('tokenPrompt').textContent = totalPromptTokens.toLocaleString();
@@ -1111,14 +1172,19 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
     await handleOpenAIStream(res);
   } else {
     const data = await res.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    messages.push({ role: 'assistant', content });
+    const parsed = extractOpenAIOutput(data.choices?.[0]?.message || data.output?.[0] || data);
+    const imageFromText = extractImageDataFromText(parsed.text);
+    if (imageFromText && !parsed.imageUrl) {
+      parsed.imageUrl = imageFromText;
+      parsed.text = '';
+    }
+    messages.push({ role: 'assistant', content: parsed.text, imageUrl: parsed.imageUrl });
 
     const usage = data.usage || {};
     totalPromptTokens += usage.prompt_tokens || 0;
     totalCompletionTokens += usage.completion_tokens || 0;
 
-    addMessageEl('assistant', content, `${usage.prompt_tokens || '?'}p / ${usage.completion_tokens || '?'}c`);
+    addMessageEl('assistant', { text: parsed.text, imageUrl: parsed.imageUrl }, `${usage.prompt_tokens || '?'}p / ${usage.completion_tokens || '?'}c`);
     updateTokenDisplay();
   }
 }
@@ -1159,22 +1225,49 @@ async function sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStr
     await handleMessagesStream(res);
   } else {
     const data = await res.json();
-    const content = data.content?.map(b => b.text).join('') || '';
-    messages.push({ role: 'assistant', content });
+    const parsed = extractAnthropicOutput(data);
+    const imageFromText = extractImageDataFromText(parsed.text);
+    if (imageFromText && !parsed.imageUrl) {
+      parsed.imageUrl = imageFromText;
+      parsed.text = '';
+    }
+    messages.push({ role: 'assistant', content: parsed.text, imageUrl: parsed.imageUrl });
 
     const usage = data.usage || {};
     totalPromptTokens += usage.input_tokens || 0;
     totalCompletionTokens += usage.output_tokens || 0;
 
-    addMessageEl('assistant', content, `${usage.input_tokens || '?'}p / ${usage.output_tokens || '?'}c`);
+    addMessageEl('assistant', { text: parsed.text, imageUrl: parsed.imageUrl }, `${usage.input_tokens || '?'}p / ${usage.output_tokens || '?'}c`);
     updateTokenDisplay();
   }
 }
 
 async function handleOpenAIStream(res) {
   const bodyEl = addMessageEl('assistant', '');
-  let fullContent = '';
+  let fullText = '';
+  let imageUrl = null;
   let usageData = null;
+
+  const render = () => {
+    bodyEl.innerHTML = '';
+    if (fullText) {
+      const textEl = document.createElement('div');
+      textEl.textContent = fullText;
+      bodyEl.appendChild(textEl);
+    }
+    if (imageUrl) {
+      const img = document.createElement('img');
+      img.src = imageUrl;
+      img.alt = 'generated image';
+      img.style.maxWidth = '240px';
+      img.style.maxHeight = '240px';
+      img.style.marginTop = fullText ? '10px' : '0';
+      img.style.borderRadius = '10px';
+      img.style.border = '1px solid var(--border)';
+      bodyEl.appendChild(img);
+    }
+    document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+  };
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -1197,24 +1290,35 @@ async function handleOpenAIStream(res) {
       try {
         const parsed = JSON.parse(data);
         const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          fullContent += delta;
-          bodyEl.textContent = fullContent;
-          document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+        if (typeof delta === 'string') {
+          fullText += delta;
+          const maybeImage = extractImageDataFromText(fullText);
+          if (maybeImage) {
+            imageUrl = maybeImage;
+            fullText = '';
+          }
+          render();
+        } else if (Array.isArray(delta)) {
+          for (const part of delta) {
+            if (part?.type === 'text' && part.text) fullText += part.text;
+            if (part?.type === 'image_url' && part.image_url?.url) imageUrl = part.image_url.url;
+            if (part?.type === 'output_image' && part.result) imageUrl = normalizeDataUrl(part.mime_type, part.result);
+            if (part?.type === 'output_image' && part.image_base64) imageUrl = normalizeDataUrl(part.mime_type, part.image_base64);
+          }
+          render();
         }
         if (parsed.usage) usageData = parsed.usage;
       } catch {}
     }
   }
 
-  messages.push({ role: 'assistant', content: fullContent });
+  messages.push({ role: 'assistant', content: fullText, imageUrl });
 
   if (usageData) {
     totalPromptTokens += usageData.prompt_tokens || 0;
     totalCompletionTokens += usageData.completion_tokens || 0;
   } else {
-    // 估算 tokens
-    const est = Math.ceil(fullContent.length / 4);
+    const est = Math.ceil(fullText.length / 4);
     totalCompletionTokens += est;
   }
 
@@ -1310,7 +1414,29 @@ async function handleAnthropicStream(res) {
 
 async function handleMessagesStream(res) {
   const bodyEl = addMessageEl('assistant', '');
-  let fullContent = '';
+  let fullText = '';
+  let imageUrl = null;
+
+  const render = () => {
+    bodyEl.innerHTML = '';
+    if (fullText) {
+      const textEl = document.createElement('div');
+      textEl.textContent = fullText;
+      bodyEl.appendChild(textEl);
+    }
+    if (imageUrl) {
+      const img = document.createElement('img');
+      img.src = imageUrl;
+      img.alt = 'generated image';
+      img.style.maxWidth = '240px';
+      img.style.maxHeight = '240px';
+      img.style.marginTop = fullText ? '10px' : '0';
+      img.style.borderRadius = '10px';
+      img.style.border = '1px solid var(--border)';
+      bodyEl.appendChild(img);
+    }
+    document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+  };
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -1332,9 +1458,18 @@ async function handleMessagesStream(res) {
         const parsed = JSON.parse(trimmed.slice(6));
 
         if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-          fullContent += parsed.delta.text;
-          bodyEl.textContent = fullContent;
-          document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+          fullText += parsed.delta.text;
+          const maybeImage = extractImageDataFromText(fullText);
+          if (maybeImage) {
+            imageUrl = maybeImage;
+            fullText = '';
+          }
+          render();
+        }
+
+        if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'image' && parsed.content_block?.source?.type === 'base64') {
+          imageUrl = normalizeDataUrl(parsed.content_block.source.media_type, parsed.content_block.source.data);
+          render();
         }
 
         if (parsed.type === 'message_start' && parsed.message?.usage) {
@@ -1348,7 +1483,7 @@ async function handleMessagesStream(res) {
     }
   }
 
-  messages.push({ role: 'assistant', content: fullContent });
+  messages.push({ role: 'assistant', content: fullText, imageUrl });
   updateTokenDisplay();
 }
 
