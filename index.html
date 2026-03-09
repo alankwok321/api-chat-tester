@@ -385,6 +385,50 @@
 
   .actions-row .btn { font-size: 12px; padding: 6px 12px; }
 
+  .image-toolbar {
+    padding: 10px 24px 0;
+    background: var(--surface);
+  }
+
+  .image-preview {
+    display: none;
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+
+  .image-preview.active {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .image-preview img {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .image-meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .image-meta .name {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .image-meta .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
   /* Responsive */
   @media (max-width: 768px) {
     .sidebar { display: none; }
@@ -516,6 +560,19 @@
     <button class="btn btn-secondary" onclick="exportChat()">📋 匯出</button>
   </div>
 
+  <div class="image-toolbar">
+    <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="handleImageSelect(event)">
+    <button class="btn btn-secondary" onclick="document.getElementById('imageInput').click()">🖼 上傳圖片</button>
+    <div class="image-preview" id="imagePreview">
+      <img id="imageThumb" alt="preview">
+      <div class="image-meta">
+        <div class="name" id="imageName"></div>
+        <div class="sub" id="imageInfo"></div>
+      </div>
+      <button class="btn btn-secondary" onclick="clearSelectedImage()">移除</button>
+    </div>
+  </div>
+
   <div class="input-area">
     <textarea id="userInput" placeholder="輸入訊息... (Shift+Enter 換行)" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
     <button class="send-btn" id="sendBtn" onclick="sendMessage()">
@@ -534,6 +591,7 @@ let totalPromptTokens = 0;
 let totalCompletionTokens = 0;
 let isStreaming = false;
 let abortController = null;
+let selectedImage = null;
 
 // 預設 providers
 const PROVIDERS = {
@@ -848,7 +906,26 @@ function addMessageEl(role, content, tokens) {
   div.appendChild(roleTag);
 
   const body = document.createElement('div');
-  body.textContent = content;
+  if (typeof content === 'string') {
+    body.textContent = content;
+  } else if (content?.text || content?.imageUrl) {
+    if (content.text) {
+      const textEl = document.createElement('div');
+      textEl.textContent = content.text;
+      body.appendChild(textEl);
+    }
+    if (content.imageUrl) {
+      const img = document.createElement('img');
+      img.src = content.imageUrl;
+      img.alt = 'uploaded image';
+      img.style.maxWidth = '240px';
+      img.style.maxHeight = '240px';
+      img.style.marginTop = content.text ? '10px' : '0';
+      img.style.borderRadius = '10px';
+      img.style.border = '1px solid var(--border)';
+      body.appendChild(img);
+    }
+  }
   div.appendChild(body);
 
   if (tokens) {
@@ -861,6 +938,75 @@ function addMessageEl(role, content, tokens) {
   area.appendChild(div);
   area.scrollTop = area.scrollHeight;
   return body;
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB'];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit++;
+  }
+  return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function clearSelectedImage() {
+  selectedImage = null;
+  document.getElementById('imageInput').value = '';
+  document.getElementById('imagePreview').classList.remove('active');
+}
+
+function handleImageSelect(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    alert('請選擇圖片檔');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    selectedImage = {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      dataUrl: reader.result
+    };
+
+    document.getElementById('imageThumb').src = selectedImage.dataUrl;
+    document.getElementById('imageName').textContent = file.name;
+    document.getElementById('imageInfo').textContent = `${file.type} · ${formatBytes(file.size)}`;
+    document.getElementById('imagePreview').classList.add('active');
+  };
+  reader.readAsDataURL(file);
+}
+
+function buildOpenAIMessageContent(text, image) {
+  if (!image) return text;
+  const parts = [];
+  if (text) parts.push({ type: 'text', text });
+  parts.push({ type: 'image_url', image_url: { url: image.dataUrl } });
+  return parts;
+}
+
+function buildAnthropicMessageContent(text, image) {
+  if (!image) return text;
+  const parts = [];
+  if (text) parts.push({ type: 'text', text });
+  const [, mediaType, base64Data] = image.dataUrl.match(/^data:(.*?);base64,(.*)$/) || [];
+  if (!mediaType || !base64Data) throw new Error('圖片資料格式不正確');
+  parts.push({
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: mediaType,
+      data: base64Data
+    }
+  });
+  return parts;
 }
 
 function updateTokenDisplay() {
@@ -878,17 +1024,24 @@ function updateTokenDisplay() {
 async function sendMessage() {
   const input = document.getElementById('userInput');
   const text = input.value.trim();
-  if (!text || isStreaming) return;
+  if ((!text && !selectedImage) || isStreaming) return;
 
   const key = document.getElementById('apiKey').value.trim();
   if (!key) { alert('請輸入 API 金鑰'); return; }
 
+  const imageForSend = selectedImage ? { ...selectedImage } : null;
+
   input.value = '';
   autoResize(input);
 
-  // 新增使用者訊息
-  messages.push({ role: 'user', content: text });
-  addMessageEl('user', text);
+  messages.push({
+    role: 'user',
+    content: text,
+    image: imageForSend,
+    displayText: text || '（圖片）'
+  });
+  addMessageEl('user', { text: text || '（圖片）', imageUrl: imageForSend?.dataUrl });
+  clearSelectedImage();
 
   // 建立訊息負載
   const sysPrompt = document.getElementById('systemPrompt').value.trim();
@@ -931,7 +1084,10 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
 
   const apiMessages = [];
   if (sysPrompt) apiMessages.push({ role: 'system', content: sysPrompt });
-  apiMessages.push(...messages);
+  apiMessages.push(...messages.map(m => ({
+    role: m.role,
+    content: buildOpenAIMessageContent(m.content || m.displayText || '', m.image)
+  })));
 
   const body = {
     model, messages: apiMessages, temperature: temp, max_tokens: maxTok, stream: doStream
@@ -972,7 +1128,10 @@ async function sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStr
 
   const body = {
     model, max_tokens: maxTok, temperature: temp,
-    messages: messages.map(m => ({ role: m.role, content: m.content })),
+    messages: messages.map(m => ({
+      role: m.role,
+      content: buildAnthropicMessageContent(m.content || m.displayText || '', m.image)
+    })),
     stream: doStream
   };
   if (sysPrompt) body.system = sysPrompt;
@@ -1209,6 +1368,7 @@ function clearChat() {
   messages = [];
   totalPromptTokens = 0;
   totalCompletionTokens = 0;
+  clearSelectedImage();
   const area = document.getElementById('chatArea');
   area.innerHTML = `
     <div class="welcome" id="welcome">
