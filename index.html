@@ -632,20 +632,61 @@ async function fetchModelList() {
   
   try {
     let url = endpoint.replace(/\/$/, '');
-    
+
     if (provider === 'openai') {
       // OpenAI 相容 API
-      url += '/models';
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
-      });
-      
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const models = data.data?.map(m => m.id) || [];
-      
-      if (models.length === 0) throw new Error('未找到模型');
-      
+      // 支援使用者輸入 base URL、/v1、/v1/chat/completions 與 /v1/models
+      if (url.endsWith('/chat/completions')) {
+        url = url.slice(0, -'/chat/completions'.length);
+      }
+      if (url.endsWith('/models')) {
+        url = url.slice(0, -'/models'.length);
+      }
+      if (!url.endsWith('/v1')) {
+        if (url.includes('/v1/')) {
+          url = url.split('/v1/')[0] + '/v1';
+        } else {
+          url += '/v1';
+        }
+      }
+
+      const candidates = [
+        url + '/models',
+        url.slice(0, -'/v1'.length) + '/models'
+      ];
+
+      let models = [];
+      let lastError = '';
+
+      for (const candidateUrl of candidates) {
+        const res = await fetch(candidateUrl, {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          lastError = err.error?.message || `HTTP ${res.status}`;
+          continue;
+        }
+
+        const text = await res.text();
+        let data = null;
+        try {
+          data = JSON.parse(text);
+        } catch (_) {
+          lastError = '回應不是 JSON，請確認 API 端點是否為模型 API（例如 /v1/models）';
+          continue;
+        }
+
+        models = data.data?.map(m => m.id) || [];
+        if (models.length > 0) {
+          break;
+        }
+        lastError = '未找到模型';
+      }
+
+      if (models.length === 0) throw new Error(lastError || '未找到模型');
+
       updateModelDropdown(models);
       addMessageEl('system', `✅ 找到 ${models.length} 個模型`);
     } else if (provider === 'anthropic') {
