@@ -429,6 +429,70 @@
     margin-top: 4px;
   }
 
+  .message-image-wrap {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .message-image-btn {
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: zoom-in;
+  }
+
+  .message-image-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .image-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 24px;
+  }
+
+  .image-modal.active {
+    display: flex;
+  }
+
+  .image-modal-backdrop {
+    position: absolute;
+    inset: 0;
+  }
+
+  .image-modal-content {
+    position: relative;
+    max-width: min(92vw, 1100px);
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 1;
+  }
+
+  .image-modal-content img {
+    max-width: 100%;
+    max-height: calc(92vh - 60px);
+    object-fit: contain;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .image-modal-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
   /* Responsive */
   @media (max-width: 768px) {
     .sidebar { display: none; }
@@ -581,6 +645,17 @@
         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
       </svg>
     </button>
+  </div>
+</div>
+
+<div class="image-modal" id="imageModal" aria-hidden="true">
+  <div class="image-modal-backdrop" onclick="closeImageModal()"></div>
+  <div class="image-modal-content">
+    <div class="image-modal-toolbar">
+      <a class="btn btn-secondary" id="imageModalDownload" download="generated-image.png">⬇ 下載</a>
+      <button class="btn btn-secondary" onclick="closeImageModal()">✕ 關閉</button>
+    </div>
+    <img id="imageModalImg" alt="preview enlarged">
   </div>
 </div>
 
@@ -892,6 +967,76 @@ async function testConnection() {
   }
 }
 
+function getDownloadFilename(imageUrl, fallback = 'generated-image.png') {
+  if (!imageUrl) return fallback;
+  const mimeMatch = imageUrl.match(/^data:image\/(png|jpeg|jpg|webp|gif)/i);
+  const ext = mimeMatch ? mimeMatch[1].replace('jpeg', 'jpg') : 'png';
+  return `generated-image.${ext}`;
+}
+
+function openImageModal(imageUrl, filename) {
+  const modal = document.getElementById('imageModal');
+  const img = document.getElementById('imageModalImg');
+  const download = document.getElementById('imageModalDownload');
+  img.src = imageUrl;
+  download.href = imageUrl;
+  download.download = filename || getDownloadFilename(imageUrl);
+  modal.classList.add('active');
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeImageModal() {
+  const modal = document.getElementById('imageModal');
+  modal.classList.remove('active');
+  modal.setAttribute('aria-hidden', 'true');
+}
+
+function appendImageEl(container, imageUrl, alt = 'image', hasText = false) {
+  if (!imageUrl) return;
+  const filename = getDownloadFilename(imageUrl);
+  const wrap = document.createElement('div');
+  wrap.className = 'message-image-wrap';
+  wrap.style.marginTop = hasText ? '10px' : '0';
+
+  const imageBtn = document.createElement('button');
+  imageBtn.type = 'button';
+  imageBtn.className = 'message-image-btn';
+  imageBtn.title = '點擊放大預覽';
+  imageBtn.onclick = () => openImageModal(imageUrl, filename);
+
+  const img = document.createElement('img');
+  img.src = imageUrl;
+  img.alt = alt;
+  img.style.maxWidth = '240px';
+  img.style.maxHeight = '240px';
+  img.style.borderRadius = '10px';
+  img.style.border = '1px solid var(--border)';
+  imageBtn.appendChild(img);
+  wrap.appendChild(imageBtn);
+
+  const actions = document.createElement('div');
+  actions.className = 'message-image-actions';
+
+  const downloadLink = document.createElement('a');
+  downloadLink.className = 'btn btn-secondary';
+  downloadLink.href = imageUrl;
+  downloadLink.download = filename;
+  downloadLink.textContent = '⬇ 下載';
+  actions.appendChild(downloadLink);
+
+  wrap.appendChild(actions);
+  container.appendChild(wrap);
+}
+
+function splitMarkdownImageText(text) {
+  if (!text || typeof text !== 'string') return { text: '', imageUrl: null };
+  const markdownImageMatch = text.match(/^\s*!\[[^\]]*\]\((data:image\/[^)]+)\)\s*$/s);
+  if (markdownImageMatch) {
+    return { text: '', imageUrl: markdownImageMatch[1] };
+  }
+  return { text, imageUrl: null };
+}
+
 function addMessageEl(role, content, tokens) {
   const welcome = document.getElementById('welcome');
   if (welcome) welcome.style.display = 'none';
@@ -907,24 +1052,23 @@ function addMessageEl(role, content, tokens) {
 
   const body = document.createElement('div');
   if (typeof content === 'string') {
-    body.textContent = content;
-  } else if (content?.text || content?.imageUrl) {
-    if (content.text) {
+    const parsed = splitMarkdownImageText(content);
+    if (parsed.text) {
       const textEl = document.createElement('div');
-      textEl.textContent = content.text;
+      textEl.textContent = parsed.text;
       body.appendChild(textEl);
     }
-    if (content.imageUrl) {
-      const img = document.createElement('img');
-      img.src = content.imageUrl;
-      img.alt = 'uploaded image';
-      img.style.maxWidth = '240px';
-      img.style.maxHeight = '240px';
-      img.style.marginTop = content.text ? '10px' : '0';
-      img.style.borderRadius = '10px';
-      img.style.border = '1px solid var(--border)';
-      body.appendChild(img);
+    appendImageEl(body, parsed.imageUrl, 'generated image', !!parsed.text);
+  } else if (content?.text || content?.imageUrl) {
+    const parsed = splitMarkdownImageText(content.text || '');
+    const finalText = parsed.text;
+    const finalImageUrl = content.imageUrl || parsed.imageUrl;
+    if (finalText) {
+      const textEl = document.createElement('div');
+      textEl.textContent = finalText;
+      body.appendChild(textEl);
     }
+    appendImageEl(body, finalImageUrl, 'uploaded image', !!finalText);
   }
   div.appendChild(body);
 
@@ -1063,6 +1207,8 @@ function extractAnthropicOutput(data) {
 function extractImageDataFromText(text) {
   if (!text || typeof text !== 'string') return null;
   const trimmed = text.trim();
+  const markdownImageMatch = trimmed.match(/^!\[[^\]]*\]\((data:image\/[^)]+)\)$/s);
+  if (markdownImageMatch) return markdownImageMatch[1];
   if (trimmed.startsWith('data:image/')) return trimmed;
   if (/^[A-Za-z0-9+/=\s]+$/.test(trimmed) && trimmed.replace(/\s+/g, '').length > 200) {
     return normalizeDataUrl('image/png', trimmed.replace(/\s+/g, ''));
@@ -1256,15 +1402,7 @@ async function handleOpenAIStream(res) {
       bodyEl.appendChild(textEl);
     }
     if (imageUrl) {
-      const img = document.createElement('img');
-      img.src = imageUrl;
-      img.alt = 'generated image';
-      img.style.maxWidth = '240px';
-      img.style.maxHeight = '240px';
-      img.style.marginTop = fullText ? '10px' : '0';
-      img.style.borderRadius = '10px';
-      img.style.border = '1px solid var(--border)';
-      bodyEl.appendChild(img);
+      appendImageEl(bodyEl, imageUrl, 'generated image', !!fullText);
     }
     document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
   };
@@ -1425,15 +1563,7 @@ async function handleMessagesStream(res) {
       bodyEl.appendChild(textEl);
     }
     if (imageUrl) {
-      const img = document.createElement('img');
-      img.src = imageUrl;
-      img.alt = 'generated image';
-      img.style.maxWidth = '240px';
-      img.style.maxHeight = '240px';
-      img.style.marginTop = fullText ? '10px' : '0';
-      img.style.borderRadius = '10px';
-      img.style.border = '1px solid var(--border)';
-      bodyEl.appendChild(img);
+      appendImageEl(bodyEl, imageUrl, 'generated image', !!fullText);
     }
     document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
   };
@@ -1493,6 +1623,10 @@ function handleKey(e) {
     sendMessage();
   }
 }
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeImageModal();
+});
 
 function autoResize(el) {
   el.style.height = 'auto';
