@@ -583,6 +583,39 @@ function toggleApiKeyVisibility() {
   input.type = input.type === 'password' ? 'text' : 'password';
 }
 
+function resolveOpenAIBaseUrl(endpoint) {
+  let url = (endpoint || '').trim();
+  if (!url) return 'https://api.openai.com/v1';
+
+  url = url.replace(/\/$/, '');
+
+  if (url.endsWith('/chat/completions')) return url.slice(0, -'/chat/completions'.length);
+  if (url.endsWith('/models')) return url.slice(0, -'/models'.length);
+  if (url.endsWith('/v1')) return url;
+  if (url.includes('/v1/')) return url.split('/v1/')[0] + '/v1';
+  return url + '/v1';
+}
+
+function resolveOpenAIChatUrl(endpoint) {
+  return resolveOpenAIBaseUrl(endpoint) + '/chat/completions';
+}
+
+function resolveOpenAIModelsUrl(endpoint) {
+  return resolveOpenAIBaseUrl(endpoint) + '/models';
+}
+
+function resolveAnthropicMessagesUrl(endpoint) {
+  let url = (endpoint || '').trim();
+  if (!url) return 'https://api.anthropic.com/v1/messages';
+
+  url = url.replace(/\/$/, '');
+
+  if (url.endsWith('/messages')) return url;
+  if (url.endsWith('/v1')) return url + '/messages';
+  if (url.includes('/v1/')) return url.split('/v1/')[0] + '/v1/messages';
+  return url + '/v1/messages';
+}
+
 function saveProfile() {
   const provider = getProvider();
   const endpoint = document.getElementById('endpoint').value.trim();
@@ -623,24 +656,31 @@ async function fetchModelList() {
   const endpoint = document.getElementById('endpoint').value.trim();
   const apiKey = document.getElementById('apiKey').value.trim();
   
-  if (!endpoint || !apiKey) {
-    alert('請先輸入 API 端點和金鑰');
+  if (!apiKey) {
+    alert('請先輸入 API 金鑰');
     return;
   }
 
   addMessageEl('system', `📡 正在取得模型列表...`);
   
   try {
-    let url = endpoint.replace(/\/$/, '');
-    
     if (provider === 'openai') {
-      // OpenAI 相容 API
-      url += '/models';
+      const url = resolveOpenAIModelsUrl(endpoint);
       const res = await fetch(url, {
         headers: { 'Authorization': `Bearer ${apiKey}` }
       });
       
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+          throw new Error(`API 回傳了 HTML，不是 JSON。請檢查端點是否正確（目前請求: ${url}）`);
+        }
+        throw new Error(`API 沒有回傳 JSON（Content-Type: ${contentType || 'unknown'}）`);
+      }
+
       const data = await res.json();
       const models = data.data?.map(m => m.id) || [];
       
@@ -649,7 +689,6 @@ async function fetchModelList() {
       updateModelDropdown(models);
       addMessageEl('system', `✅ 找到 ${models.length} 個模型`);
     } else if (provider === 'anthropic') {
-      // Anthropic 不提供模型列表 API，顯示常見模型
       const commonModels = [
         'claude-sonnet-4-20250514',
         'claude-3-5-sonnet-20241022',
@@ -748,7 +787,8 @@ async function testConnection() {
     let ok = false;
 
     if (provider === 'anthropic') {
-      const res = await fetch(endpoint, {
+      const finalEndpoint = resolveAnthropicMessagesUrl(endpoint);
+      const res = await fetch(finalEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -768,7 +808,8 @@ async function testConnection() {
         throw new Error(err.error?.message || `HTTP ${res.status}`);
       }
     } else {
-      const res = await fetch(endpoint, {
+      const finalEndpoint = resolveOpenAIChatUrl(endpoint);
+      const res = await fetch(finalEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -886,28 +927,7 @@ async function sendMessage() {
 }
 
 async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
-  // 自動補上路徑
-  let finalEndpoint = endpoint.trim();
-  if (!finalEndpoint) {
-    finalEndpoint = 'https://api.openai.com/v1/chat/completions';
-  } else {
-    // 移除末尾斜線
-    finalEndpoint = finalEndpoint.replace(/\/$/, '');
-    
-    // 如果已經是完整路徑，保持不變
-    if (finalEndpoint.endsWith('/chat/completions')) {
-      // 已是完整路徑
-    } else if (finalEndpoint.endsWith('/v1')) {
-      // 只有 /v1，補上 /chat/completions
-      finalEndpoint += '/chat/completions';
-    } else if (finalEndpoint.includes('/v1/')) {
-      // 有 /v1/ 但不是 /chat/completions，補上 /chat/completions
-      finalEndpoint += '/chat/completions';
-    } else {
-      // 沒有 /v1，補上 /v1/chat/completions
-      finalEndpoint += '/v1/chat/completions';
-    }
-  }
+  const finalEndpoint = resolveOpenAIChatUrl(endpoint);
 
   const apiMessages = [];
   if (sysPrompt) apiMessages.push({ role: 'system', content: sysPrompt });
@@ -948,25 +968,7 @@ async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStrea
 }
 
 async function sendMessages(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
-  // 自動補上路徑
-  let finalEndpoint = endpoint.trim();
-  if (!finalEndpoint) {
-    finalEndpoint = 'https://api.anthropic.com/v1/messages';
-  } else {
-    // 移除末尾斜線
-    finalEndpoint = finalEndpoint.replace(/\/$/, '');
-
-    // 如果已經是完整路徑，保持不變
-    if (finalEndpoint.endsWith('/messages')) {
-      // 已是完整路徑
-    } else if (finalEndpoint.endsWith('/v1')) {
-      finalEndpoint += '/messages';
-    } else if (finalEndpoint.includes('/v1/')) {
-      finalEndpoint += '/messages';
-    } else {
-      finalEndpoint += '/v1/messages';
-    }
-  }
+  const finalEndpoint = resolveAnthropicMessagesUrl(endpoint);
 
   const body = {
     model, max_tokens: maxTok, temperature: temp,
