@@ -707,8 +707,9 @@ function onProviderChange() {
   endpoint.value = '';
   endpoint.placeholder = provider.endpoint;
   model.value = provider.model;
-  updateModelDisplay();
   updateProfileList();
+  loadApiKey();
+  updateModelDisplay();
 }
 
 function toggleApiKeyVisibility() {
@@ -779,6 +780,7 @@ function loadProfile() {
   if (profiles[name]) {
     document.getElementById('endpoint').value = profiles[name].endpoint;
     document.getElementById('apiKey').value = profiles[name].apiKey;
+    saveCurrentSettings();
     // 載入後自動取得模型列表
     fetchModelList();
   }
@@ -891,12 +893,59 @@ function updateModelDisplay() {
   document.getElementById('modelDisplay').textContent = document.getElementById('model').value || '尚未選擇模型';
 }
 
-document.getElementById('model').addEventListener('input', updateModelDisplay);
+function getSettingsStorageKey(provider = getProvider()) {
+  return 'api_chat_tester_settings_' + provider;
+}
 
-// 初始化時載入儲存的 API key
+function saveCurrentSettings() {
+  const provider = getProvider();
+  const payload = {
+    endpoint: document.getElementById('endpoint').value.trim(),
+    apiKey: document.getElementById('apiKey').value.trim(),
+    model: document.getElementById('model').value.trim(),
+    systemPrompt: document.getElementById('systemPrompt').value,
+    temperature: document.getElementById('temperature').value,
+    maxTokens: document.getElementById('maxTokens').value,
+    stream: document.getElementById('streamToggle').checked,
+  };
+  localStorage.setItem(getSettingsStorageKey(provider), JSON.stringify(payload));
+}
+
+function loadApiKey() {
+  const provider = getProvider();
+  const raw = localStorage.getItem(getSettingsStorageKey(provider));
+  if (!raw) {
+    updateModelDisplay();
+    return;
+  }
+
+  try {
+    const saved = JSON.parse(raw);
+    const providerDefaults = PROVIDERS[provider] || {};
+
+    document.getElementById('endpoint').value = saved.endpoint || '';
+    document.getElementById('apiKey').value = saved.apiKey || '';
+    document.getElementById('model').value = saved.model || providerDefaults.model || '';
+    document.getElementById('systemPrompt').value = saved.systemPrompt || '';
+    document.getElementById('temperature').value = saved.temperature || '0.7';
+    document.getElementById('maxTokens').value = saved.maxTokens || '4096';
+    document.getElementById('streamToggle').checked = saved.stream !== false;
+  } catch (error) {
+    console.warn('無法讀取已儲存設定', error);
+  }
+
+  updateModelDisplay();
+}
+
+document.getElementById('model').addEventListener('input', updateModelDisplay);
+['endpoint', 'apiKey', 'model', 'systemPrompt', 'temperature', 'maxTokens'].forEach(id => {
+  document.getElementById(id).addEventListener('input', saveCurrentSettings);
+});
+document.getElementById('streamToggle').addEventListener('change', saveCurrentSettings);
+
+// 初始化時載入儲存設定
 window.addEventListener('load', () => {
   onProviderChange();
-  loadApiKey();
 });
 
 function setStatus(state, text) {
