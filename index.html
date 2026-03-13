@@ -691,6 +691,8 @@
   <div class="image-toolbar">
     <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="handleImageSelect(event)">
     <button class="btn btn-secondary" onclick="document.getElementById('imageInput').click()">🖼 上傳圖片</button>
+    <button class="btn btn-secondary" id="cameraBtn" onclick="openCameraModal()">📷 Camera</button>
+    <button class="btn btn-secondary" id="liveOcrToggleBtn" onclick="toggleLiveOcr()" disabled>▶ Live OCR</button>
     <button class="btn btn-secondary" id="ocrBtn" onclick="openOcrModal()" disabled>🧾 OCR</button>
     <div class="image-preview" id="imagePreview">
       <img id="imageThumb" alt="preview">
@@ -710,6 +712,33 @@
         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
       </svg>
     </button>
+  </div>
+</div>
+
+<!-- Camera Modal -->
+<div class="image-modal" id="cameraModal" aria-hidden="true">
+  <div class="image-modal-backdrop" onclick="closeCameraModal()"></div>
+  <div class="image-modal-content">
+    <div class="image-modal-toolbar" style="justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <strong style="font-size:14px;">📷 Camera</strong>
+        <span style="font-size:12px;color:var(--text-dim);" id="cameraStatus">Idle</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" onclick="captureCameraFrame()">Capture</button>
+        <button class="btn btn-secondary" onclick="closeCameraModal()">✕ Close</button>
+      </div>
+    </div>
+    <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; background: rgba(255,255,255,0.03);">
+      <div style="padding:10px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--text-dim); display:flex; justify-content:space-between; align-items:center;">
+        <span>Live preview</span>
+        <span style="font-variant-numeric: tabular-nums;" id="liveOcrSmall">Live OCR: OFF</span>
+      </div>
+      <div style="padding:12px; display:flex; justify-content:center; align-items:center; min-height:320px;">
+        <video id="cameraVideo" autoplay playsinline style="width:100%; max-width:860px; border-radius:10px; border:1px solid var(--border); background:#000;"></video>
+      </div>
+    </div>
+    <canvas id="cameraCanvas" width="1280" height="720" style="display:none"></canvas>
   </div>
 </div>
 
@@ -769,6 +798,11 @@ let totalCompletionTokens = 0;
 let isStreaming = false;
 let abortController = null;
 let selectedImage = null;
+let cameraStream = null;
+let liveOcrEnabled = false;
+let liveOcrTimer = null;
+let liveOcrInFlight = false;
+let lastOcrText = '';
 
 function applyTheme(theme) {
   const body = document.body;
@@ -1608,6 +1642,8 @@ function clearSelectedImage() {
   document.getElementById('imagePreview').classList.remove('active');
   const ocrBtn = document.getElementById('ocrBtn');
   if (ocrBtn) ocrBtn.disabled = true;
+  const liveBtn = document.getElementById('liveOcrToggleBtn');
+  if (liveBtn) liveBtn.disabled = true;
 }
 
 function handleImageSelect(event) {
@@ -1634,6 +1670,8 @@ function handleImageSelect(event) {
     document.getElementById('imagePreview').classList.add('active');
     const ocrBtn = document.getElementById('ocrBtn');
     if (ocrBtn) ocrBtn.disabled = false;
+    const liveBtn = document.getElementById('liveOcrToggleBtn');
+    if (liveBtn) liveBtn.disabled = false;
   };
   reader.readAsDataURL(file);
 }
@@ -2271,6 +2309,169 @@ function useOcrText() {
   autoResize(input);
   closeOcrModal();
   input.focus();
+}
+
+// --- Camera + Live OCR ---
+async function openCameraModal() {
+  document.getElementById('cameraModal').classList.add('active');
+  const status = document.getElementById('cameraStatus');
+  status.textContent = 'Requesting camera…';
+
+  try {
+    // Prefer rear camera on mobile if available
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+    const video = document.getElementById('cameraVideo');
+    video.srcObject = cameraStream;
+    status.textContent = 'Live';
+    await video.play().catch(() => {});
+
+    // Enable live OCR toggle once camera is active
+    const liveBtn = document.getElementById('liveOcrToggleBtn');
+    if (liveBtn) liveBtn.disabled = false;
+  } catch (err) {
+    status.textContent = 'Camera denied';
+    alert('Camera error: ' + (err?.message || err));
+  }
+}
+
+function closeCameraModal() {
+  document.getElementById('cameraModal').classList.remove('active');
+  stopLiveOcr();
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  const video = document.getElementById('cameraVideo');
+  if (video) video.srcObject = null;
+  document.getElementById('cameraStatus').textContent = 'Idle';
+}
+
+function captureCameraFrame() {
+  const video = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('cameraCanvas');
+  if (!video || !canvas) return;
+
+  const w = video.videoWidth || 1280;
+  const h = video.videoHeight || 720;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, w, h);
+  const dataUrl = canvas.toDataURL('image/png');
+
+  // set as selectedImage
+  selectedImage = {
+    name: 'camera.png',
+    type: 'image/png',
+    size: dataUrl.length,
+    dataUrl
+  };
+
+  document.getElementById('imageThumb').src = selectedImage.dataUrl;
+  document.getElementById('imageName').textContent = selectedImage.name;
+  document.getElementById('imageInfo').textContent = `${selectedImage.type} · captured`;
+  document.getElementById('imagePreview').classList.add('active');
+  const ocrBtn = document.getElementById('ocrBtn');
+  if (ocrBtn) ocrBtn.disabled = false;
+
+  // Enable live OCR toggle too
+  const liveBtn = document.getElementById('liveOcrToggleBtn');
+  if (liveBtn) liveBtn.disabled = false;
+}
+
+function toggleLiveOcr() {
+  liveOcrEnabled = !liveOcrEnabled;
+  if (liveOcrEnabled) startLiveOcr();
+  else stopLiveOcr();
+}
+
+function startLiveOcr() {
+  liveOcrEnabled = true;
+  lastOcrText = '';
+  const small = document.getElementById('liveOcrSmall');
+  if (small) small.textContent = 'Live OCR: ON';
+  const btn = document.getElementById('liveOcrToggleBtn');
+  if (btn) btn.textContent = '■ Live OCR';
+
+  // Run OCR every ~1.2s to avoid melting CPU
+  liveOcrTimer = setInterval(() => {
+    if (!cameraStream) return;
+    if (liveOcrInFlight) return;
+    runLiveOcrFrame();
+  }, 1200);
+}
+
+function stopLiveOcr() {
+  liveOcrEnabled = false;
+  const small = document.getElementById('liveOcrSmall');
+  if (small) small.textContent = 'Live OCR: OFF';
+  const btn = document.getElementById('liveOcrToggleBtn');
+  if (btn) btn.textContent = '▶ Live OCR';
+  if (liveOcrTimer) { clearInterval(liveOcrTimer); liveOcrTimer = null; }
+  liveOcrInFlight = false;
+}
+
+async function runLiveOcrFrame() {
+  const video = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('cameraCanvas');
+  if (!video || !canvas) return;
+
+  // Lazy-load tesseract
+  if (!window.Tesseract) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Failed to load tesseract.js'));
+      document.head.appendChild(s);
+    });
+  }
+
+  liveOcrInFlight = true;
+  try {
+    const w = video.videoWidth || 1280;
+    const h = video.videoHeight || 720;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, w, h);
+
+    // Downscale to speed up OCR
+    const targetW = 960;
+    const scale = Math.min(1, targetW / w);
+    const tw = Math.round(w * scale);
+    const th = Math.round(h * scale);
+
+    const tmp = document.createElement('canvas');
+    tmp.width = tw; tmp.height = th;
+    tmp.getContext('2d').drawImage(canvas, 0, 0, tw, th);
+    const frameUrl = tmp.toDataURL('image/png');
+
+    const { data } = await window.Tesseract.recognize(frameUrl, 'eng', {
+      logger: () => {}
+    });
+
+    const text = (data?.text || '').trim();
+    if (text && text !== lastOcrText) {
+      lastOcrText = text;
+      // Put into OCR textbox (so user can see) and also update input softly
+      const ocrBox = document.getElementById('ocrText');
+      if (ocrBox) ocrBox.value = text;
+
+      const input = document.getElementById('userInput');
+      if (input) {
+        input.value = text;
+        autoResize(input);
+      }
+    }
+  } catch {
+    // ignore intermittent OCR failures
+  } finally {
+    liveOcrInFlight = false;
+  }
 }
 
 </script>
