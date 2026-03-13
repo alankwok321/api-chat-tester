@@ -778,8 +778,17 @@ const FALLBACK_MAX_RETRY_PER_ENDPOINT = 1;
 
 function classifyFallbackAction(status, message) {
   const msg = String(message || '').toLowerCase();
+
+  // Message-first guards: avoid misclassifying semantic errors as retriable 429.
+  if (
+    msg.includes('requested combination of response modalities') ||
+    msg.includes('accepts the following combination of response modalities') ||
+    msg.includes('invalid argument')
+  ) return 'FALLBACK';
+
   if (
     status === 404 ||
+    status === 500 ||
     status === 501 ||
     msg.includes('not implemented') ||
     msg.includes('no fallback to default v1/chat/completion') ||
@@ -830,6 +839,8 @@ async function tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, v
   const chatUrl = baseUrl + '/chat/completions';
   const isTestOnly = !!opts.testOnly;
   const diagnostics = opts.diagnostics || [];
+  const maxAttempts = Number(opts.maxAttempts || 3);
+  let attempts = 0;
   const payloads = [
     {
       model,
@@ -863,8 +874,11 @@ async function tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, v
 
   let lastErr = null;
   for (const payload of payloads) {
+    if (attempts >= maxAttempts) break;
     let retry = 0;
     while (true) {
+      if (attempts >= maxAttempts) break;
+      attempts += 1;
       const res = await fetch(chatUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
