@@ -1113,19 +1113,9 @@ function appendAudioEl(container, audioUrl, filename = 'tts.mp3') {
   const audio = document.createElement('audio');
   audio.controls = true;
   audio.src = audioUrl;
-  audio.style.width = '100%';
+  audio.style.width = 'min(680px, 100%)';
+  audio.style.display = 'block';
   wrap.appendChild(audio);
-
-  const actions = document.createElement('div');
-  actions.className = 'message-image-actions';
-
-  const downloadLink = document.createElement('a');
-  downloadLink.className = 'btn btn-secondary';
-  downloadLink.href = audioUrl;
-  downloadLink.download = filename;
-  downloadLink.textContent = '⬇ 下載音檔';
-  actions.appendChild(downloadLink);
-  wrap.appendChild(actions);
 
   container.appendChild(wrap);
 }
