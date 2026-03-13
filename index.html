@@ -774,6 +774,107 @@ function resolveAnthropicMessagesUrl(endpoint) {
   return url + '/v1/messages';
 }
 
+const FALLBACK_MAX_RETRY_PER_ENDPOINT = 1;
+
+function classifyFallbackAction(status, message) {
+  const msg = String(message || '').toLowerCase();
+  if (
+    status === 404 ||
+    status === 501 ||
+    msg.includes('not implemented') ||
+    msg.includes('no fallback to default v1/chat/completion') ||
+    msg.includes('unsupported endpoint')
+  ) return 'FALLBACK';
+
+  if (
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    msg.includes('timeout') ||
+    msg.includes('connection reset')
+  ) return 'RETRY';
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    status === 422 ||
+    (status === 400 && (msg.includes('schema') || msg.includes('invalid_request_error')))
+  ) return 'STOP';
+
+  return 'STOP';
+}
+
+async function readErrorBody(res) {
+  const data = await res.json().catch(() => ({}));
+  const msg = data?.error?.message || data?.message || `HTTP ${res.status}`;
+  return { data, msg };
+}
+
+async function tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, voice, response_format, opts = {}) {
+  const chatUrl = baseUrl + '/chat/completions';
+  const isTestOnly = !!opts.testOnly;
+  const payloads = [
+    {
+      model,
+      modalities: ['audio'],
+      response_modalities: ['AUDIO'],
+      audio: { voice, format: response_format || 'mp3' },
+      messages: [{ role: 'user', content: inputText }],
+      temperature: 0,
+      max_tokens: isTestOnly ? 16 : 1024
+    },
+    {
+      model,
+      modalities: ['audio'],
+      audio: { voice, format: response_format || 'mp3' },
+      messages: [{ role: 'user', content: inputText }],
+      max_tokens: isTestOnly ? 16 : 1024
+    },
+    {
+      model,
+      modalities: ['AUDIO'],
+      audio: { voice, format: response_format || 'mp3' },
+      messages: [{ role: 'user', content: [{ type: 'text', text: inputText }] }]
+    },
+    {
+      model,
+      response_modalities: ['AUDIO'],
+      audio: { voice, format: response_format || 'mp3' },
+      messages: [{ role: 'user', content: inputText }]
+    }
+  ];
+
+  let lastErr = null;
+  for (const payload of payloads) {
+    let retry = 0;
+    while (true) {
+      const res = await fetch(chatUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: true, data, chatUrl };
+      }
+
+      const err = await readErrorBody(res);
+      lastErr = err;
+      const action = classifyFallbackAction(res.status, err.msg);
+      if (action === 'RETRY' && retry < FALLBACK_MAX_RETRY_PER_ENDPOINT) {
+        retry += 1;
+        await new Promise(r => setTimeout(r, 500));
+        continue;
+      }
+      break;
+    }
+  }
+
+  return { ok: false, error: lastErr?.msg || 'fallback chat/completions 失敗', chatUrl };
+}
+
 function saveProfile() {
   const provider = getProvider();
   const endpoint = document.getElementById('endpoint').value.trim();
@@ -1045,69 +1146,39 @@ async function testConnection() {
         const baseUrl = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint);
         const speechUrl = baseUrl + '/audio/speech';
 
-        const speechRes = await fetch(speechUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-          body: JSON.stringify({ model, voice: 'alloy', input: 'hi', response_format: 'mp3', speed: 1 })
-        });
+        let speechRetry = 0;
+        while (true) {
+          const speechRes = await fetch(speechUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body: JSON.stringify({ model, voice: 'alloy', input: 'hi', response_format: 'mp3', speed: 1 })
+          });
 
-        if (speechRes.ok) {
-          setStatus('connected', '已連線 ✓');
-          return;
-        }
-
-        if (speechRes.status === 404) {
-          const chatUrl = baseUrl + '/chat/completions';
-          const testCandidates = [
-            {
-              model,
-              modalities: ['audio'],
-              response_modalities: ['AUDIO'],
-              audio: { voice: 'alloy', format: 'mp3' },
-              messages: [{ role: 'user', content: 'hi' }],
-              temperature: 0,
-              max_tokens: 16
-            },
-            {
-              model,
-              modalities: ['audio'],
-              audio: { voice: 'alloy', format: 'mp3' },
-              messages: [{ role: 'user', content: 'hi' }]
-            },
-            {
-              model,
-              modalities: ['AUDIO'],
-              audio: { voice: 'alloy', format: 'mp3' },
-              messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }]
-            }
-          ];
-
-          let okFallback = false;
-          let lastErr = null;
-          for (const payload of testCandidates) {
-            const fallbackRes = await fetch(chatUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${key}`
-              },
-              body: JSON.stringify(payload)
-            });
-            if (fallbackRes.ok) {
-              okFallback = true;
-              break;
-            }
-            lastErr = await fallbackRes.json().catch(() => ({}));
+          if (speechRes.ok) {
+            setStatus('connected', '已連線 ✓');
+            return;
           }
-          if (!okFallback) {
-            throw new Error(lastErr?.error?.message || 'fallback chat/completions 測試失敗');
-          }
-          setStatus('connected', '已連線 ✓');
-          return;
-        }
 
-        const err = await speechRes.json().catch(() => ({}));
-        throw new Error(err.error?.message || `HTTP ${speechRes.status}`);
+          const err = await readErrorBody(speechRes);
+          const action = classifyFallbackAction(speechRes.status, err.msg);
+
+          if (action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT) {
+            speechRetry += 1;
+            await new Promise(r => setTimeout(r, 500));
+            continue;
+          }
+
+          if (action === 'FALLBACK') {
+            const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, 'hi', 'alloy', 'mp3', { testOnly: true });
+            if (fallback.ok) {
+              setStatus('connected', '已連線 ✓');
+              return;
+            }
+            throw new Error(fallback.error || 'fallback chat/completions 測試失敗');
+          }
+
+          throw new Error(err.msg || `HTTP ${speechRes.status}`);
+        }
       }
 
       const finalEndpoint = resolveOpenAIChatUrl(endpoint);
@@ -1515,91 +1586,58 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
   const speechUrl = baseUrl + '/audio/speech';
   addMessageEl('system', `📤 OpenAI 相容 TTS\n端點: ${speechUrl}\n模型: ${model}`);
 
-  // 1) Try /audio/speech first
-  const res = await fetch(speechUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ model, voice, input: inputText, response_format, speed })
-  });
+  // 1) Try /audio/speech first (with controlled retry/fallback)
+  let speechRetry = 0;
+  while (true) {
+    const res = await fetch(speechUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({ model, voice, input: inputText, response_format, speed })
+    });
 
-  if (res.ok) {
-    const blob = await res.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${response_format || 'mp3'}` });
-    return;
-  }
+    if (res.ok) {
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${response_format || 'mp3'}` });
+      return;
+    }
 
-  // 2) Fallback: some providers expose TTS via /chat/completions audio mode
-  if (res.status === 404) {
-    const chatUrl = baseUrl + '/chat/completions';
-    addMessageEl('system', `↪ fallback: ${chatUrl} (audio mode)`);
-    const chatPayloadCandidates = [
-      {
-        model,
-        modalities: ['audio'],
-        response_modalities: ['AUDIO'],
-        audio: { voice, format: response_format || 'mp3' },
-        messages: [{ role: 'user', content: inputText }],
-        temperature: 0,
-        max_tokens: 1024
-      },
-      {
-        model,
-        modalities: ['audio'],
-        audio: { voice, format: response_format || 'mp3' },
-        messages: [{ role: 'user', content: inputText }],
-        max_tokens: 1024
-      },
-      {
-        model,
-        modalities: ['AUDIO'],
-        audio: { voice, format: response_format || 'mp3' },
-        messages: [{ role: 'user', content: [{ type: 'text', text: inputText }] }]
-      },
-      {
-        model,
-        response_modalities: ['AUDIO'],
-        audio: { voice, format: response_format || 'mp3' },
-        messages: [{ role: 'user', content: inputText }]
+    const err = await readErrorBody(res);
+    const action = classifyFallbackAction(res.status, err.msg);
+
+    if (action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT) {
+      speechRetry += 1;
+      addMessageEl('system', `↻ 重試 /audio/speech (${speechRetry}/${FALLBACK_MAX_RETRY_PER_ENDPOINT})：${err.msg}`);
+      await new Promise(r => setTimeout(r, 500));
+      continue;
+    }
+
+    if (action === 'FALLBACK') {
+      const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, voice, response_format, { testOnly: false });
+      addMessageEl('system', `↪ fallback: ${fallback.chatUrl} (audio mode)`);
+
+      if (!fallback.ok) {
+        throw new Error(fallback.error || 'fallback chat/completions 仍失敗（可能需要供應商專屬 TTS 參數）');
       }
-    ];
 
-    let lastErr = null;
-    let data = null;
-    for (const payload of chatPayloadCandidates) {
-      const chatRes = await fetch(chatUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-        body: JSON.stringify(payload)
-      });
-      if (chatRes.ok) {
-        data = await chatRes.json().catch(() => ({}));
-        break;
+      const data = fallback.data || {};
+      const audioB64 = data?.choices?.[0]?.message?.audio?.data
+        || data?.output?.[0]?.content?.find?.(c => c?.type === 'output_audio')?.audio?.data
+        || data?.audio?.data
+        || null;
+      if (!audioB64) {
+        throw new Error('fallback 成功但找不到 audio data（此端點可能不是 OpenAI audio chat 格式）');
       }
-      lastErr = await chatRes.json().catch(() => ({}));
+
+      const fmt = (response_format || 'mp3').toLowerCase();
+      const mime = fmt === 'wav' ? 'audio/wav' : fmt === 'opus' ? 'audio/opus' : fmt === 'aac' ? 'audio/aac' : fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
+      const objectUrl = `data:${mime};base64,${audioB64}`;
+      addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${fmt}` });
+      return;
     }
 
-    if (!data) {
-      throw new Error(lastErr?.error?.message || 'fallback chat/completions 仍失敗（可能需要供應商專屬 TTS 參數）');
-    }
-
-    const audioB64 = data?.choices?.[0]?.message?.audio?.data
-      || data?.output?.[0]?.content?.find?.(c => c?.type === 'output_audio')?.audio?.data
-      || data?.audio?.data
-      || null;
-    if (!audioB64) {
-      throw new Error('fallback 成功但找不到 audio data（此端點可能不是 OpenAI audio chat 格式）');
-    }
-
-    const fmt = (response_format || 'mp3').toLowerCase();
-    const mime = fmt === 'wav' ? 'audio/wav' : fmt === 'opus' ? 'audio/opus' : fmt === 'aac' ? 'audio/aac' : fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
-    const objectUrl = `data:${mime};base64,${audioB64}`;
-    addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${fmt}` });
-    return;
+    throw new Error(err.msg || `HTTP ${res.status}`);
   }
-
-  const err = await res.json().catch(() => ({}));
-  throw new Error(err.error?.message || `HTTP ${res.status}`);
 }
 
 async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
