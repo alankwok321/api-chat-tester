@@ -901,6 +901,46 @@ async function tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, respon
   return { ok: false, error: lastErr?.msg || 'Gemini native fallback 失敗', diagnostics };
 }
 
+async function tryResponsesAudioFallback(baseUrl, key, model, inputText, voice, response_format, opts = {}) {
+  const url = baseUrl + '/responses';
+  const diagnostics = opts.diagnostics || [];
+  const payloads = [
+    {
+      model,
+      modalities: ['audio'],
+      audio: { voice: voice || 'alloy', format: response_format || 'mp3' },
+      input: inputText
+    },
+    {
+      model,
+      response_modalities: ['audio'],
+      audio: { voice: voice || 'alloy', format: response_format || 'mp3' },
+      input: [{ role: 'user', content: [{ type: 'input_text', text: inputText }] }]
+    }
+  ];
+
+  let lastErr = null;
+  for (const payload of payloads) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      diagnostics.push({ endpoint: url, status: res.status, action: 'OK' });
+      return { ok: true, data, endpoint: url, diagnostics };
+    }
+
+    const err = await readErrorBody(res);
+    lastErr = err;
+    diagnostics.push({ endpoint: url, status: res.status, action: classifyFallbackAction(res.status, err.msg), message: err.msg });
+  }
+
+  return { ok: false, error: lastErr?.msg || 'responses fallback 失敗', endpoint: url, diagnostics };
+}
+
 async function tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, voice, response_format, opts = {}) {
   const chatUrl = baseUrl + '/chat/completions';
   const isTestOnly = !!opts.testOnly;
@@ -1272,14 +1312,23 @@ async function testConnection() {
 
           if (action === 'FALLBACK') {
             const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, 'hi', 'alloy', 'mp3', { testOnly: true, diagnostics });
-            if (!fallback.ok && shouldTryGeminiNative(model, fallback.error || err.msg)) {
-              const gFallback = await tryGeminiNativeTtsFallback(baseUrl, key, model, 'hi', 'mp3', { diagnostics });
-              renderEndpointDiagnostics('API Tester 診斷', gFallback.diagnostics || diagnostics, gFallback.ok ? '已切換 Gemini native 音訊端點' : 'Gemini native 也失敗，請改模型或檢查 provider 對 Gemini 路由支援');
-              if (gFallback.ok) {
+            if (!fallback.ok) {
+              const rFallback = await tryResponsesAudioFallback(baseUrl, key, model, 'hi', 'alloy', 'mp3', { diagnostics });
+              if (rFallback.ok) {
+                renderEndpointDiagnostics('API Tester 診斷', rFallback.diagnostics || diagnostics, '已切換 /v1/responses 音訊端點');
                 setStatus('connected', '已連線 ✓');
                 return;
               }
-              throw new Error(gFallback.error || fallback.error || 'fallback 測試失敗');
+
+              if (shouldTryGeminiNative(model, fallback.error || err.msg)) {
+                const gFallback = await tryGeminiNativeTtsFallback(baseUrl, key, model, 'hi', 'mp3', { diagnostics });
+                renderEndpointDiagnostics('API Tester 診斷', gFallback.diagnostics || diagnostics, gFallback.ok ? '已切換 Gemini native 音訊端點' : 'Gemini native 也失敗，請改模型或檢查 provider 對 Gemini 路由支援');
+                if (gFallback.ok) {
+                  setStatus('connected', '已連線 ✓');
+                  return;
+                }
+                throw new Error(gFallback.error || rFallback.error || fallback.error || 'fallback 測試失敗');
+              }
             }
 
             renderEndpointDiagnostics('API Tester 診斷', fallback.diagnostics || diagnostics, fallback.ok ? '已自動切換到可用端點' : '請改模型或檢查 provider 端點相容');
@@ -1736,6 +1785,22 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
       renderEndpointDiagnostics('TTS 請求診斷', fallback.diagnostics || diagnostics, fallback.ok ? '已自動切換到可用端點' : '請改模型或檢查 provider 端點相容');
 
       if (!fallback.ok) {
+        const rFallback = await tryResponsesAudioFallback(baseUrl, key, model, inputText, voice, response_format, { diagnostics });
+        if (rFallback.ok) {
+          const data = rFallback.data || {};
+          const audioB64 = data?.output?.find?.(o => o?.type === 'output_audio')?.audio?.data
+            || data?.output?.[0]?.content?.find?.(c => c?.type === 'output_audio')?.audio?.data
+            || data?.audio?.data
+            || null;
+          if (audioB64) {
+            const fmt = (response_format || 'mp3').toLowerCase();
+            const mime = fmt === 'wav' ? 'audio/wav' : fmt === 'opus' ? 'audio/opus' : fmt === 'aac' ? 'audio/aac' : fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
+            renderEndpointDiagnostics('TTS 請求診斷', rFallback.diagnostics || diagnostics, '已切換 /v1/responses 音訊端點');
+            addMessageEl('assistant', { text: '（Responses TTS audio）', audioUrl: `data:${mime};base64,${audioB64}`, audioFilename: `tts.${fmt}` });
+            return;
+          }
+        }
+
         if (shouldTryGeminiNative(model, fallback.error || err.msg)) {
           const gFallback = await tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, response_format, { diagnostics });
           renderEndpointDiagnostics('TTS 請求診斷', gFallback.diagnostics || diagnostics, gFallback.ok ? '已切換 Gemini native 音訊端點' : 'Gemini native 也失敗，請改模型或檢查 provider 路由');
@@ -1744,9 +1809,9 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
             addMessageEl('assistant', { text: '（Gemini native TTS audio）', audioUrl: gFallback.audioUrl, audioFilename: `tts.${fmt}` });
             return;
           }
-          throw new Error(gFallback.error || fallback.error || 'Gemini native fallback 失敗');
+          throw new Error(gFallback.error || rFallback.error || fallback.error || 'Gemini native fallback 失敗');
         }
-        throw new Error(fallback.error || 'fallback chat/completions 仍失敗（可能需要供應商專屬 TTS 參數）');
+        throw new Error(rFallback.error || fallback.error || 'fallback chat/completions 仍失敗（可能需要供應商專屬 TTS 參數）');
       }
 
       const data = fallback.data || {};
