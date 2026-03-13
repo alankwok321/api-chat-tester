@@ -1164,13 +1164,19 @@ function appendAudioEl(container, audioUrl, filename = 'tts.mp3') {
   if (!audioUrl) return;
   const wrap = document.createElement('div');
   wrap.className = 'message-audio-wrap';
-  wrap.style.marginTop = '10px';
+  wrap.style.marginTop = '12px';
+  wrap.style.width = '100%';
+  wrap.style.maxWidth = '100%';
+  wrap.style.padding = '12px';
+  wrap.style.border = '1px solid var(--border)';
+  wrap.style.borderRadius = '12px';
+  wrap.style.background = 'rgba(255,255,255,.04)';
 
   const audio = document.createElement('audio');
   audio.controls = true;
   audio.src = audioUrl;
   audio.style.width = '100%';
-  audio.style.maxWidth = '980px';
+  audio.style.minHeight = '56px';
   audio.style.display = 'block';
   wrap.appendChild(audio);
 
@@ -1230,6 +1236,10 @@ function addMessageEl(role, content, tokens) {
   const area = document.getElementById('chatArea');
   const div = document.createElement('div');
   div.className = 'message ' + role;
+  if (content?.audioUrl) {
+    div.style.maxWidth = 'min(1100px, 100%)';
+    div.style.width = '100%';
+  }
 
   const roleTag = document.createElement('div');
   roleTag.className = 'role-tag';
