@@ -691,6 +691,7 @@
   <div class="image-toolbar">
     <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="handleImageSelect(event)">
     <button class="btn btn-secondary" onclick="document.getElementById('imageInput').click()">🖼 上傳圖片</button>
+    <button class="btn btn-secondary" id="ocrBtn" onclick="openOcrModal()" disabled>🧾 OCR</button>
     <div class="image-preview" id="imagePreview">
       <img id="imageThumb" alt="preview">
       <div class="image-meta">
@@ -709,6 +710,43 @@
         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
       </svg>
     </button>
+  </div>
+</div>
+
+<!-- OCR Modal -->
+<div class="image-modal" id="ocrModal" aria-hidden="true">
+  <div class="image-modal-backdrop" onclick="closeOcrModal()"></div>
+  <div class="image-modal-content">
+    <div class="image-modal-toolbar" style="justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <strong style="font-size:14px;">🧾 OCR (Extract Text)</strong>
+        <span style="font-size:12px;color:var(--text-dim);" id="ocrStatus">Ready</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" onclick="runOcr()">Run OCR</button>
+        <button class="btn btn-secondary" onclick="closeOcrModal()">✕ Close</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr); gap:12px;">
+      <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; background: rgba(255,255,255,0.03);">
+        <div style="padding:10px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--text-dim);">Preview</div>
+        <div style="padding:12px; display:flex; justify-content:center; align-items:center; min-height:260px;">
+          <img id="ocrPreviewImg" alt="ocr preview" style="max-width:100%; max-height:320px; object-fit:contain; border-radius:10px; border:1px solid var(--border);" />
+        </div>
+      </div>
+      <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; background: rgba(255,255,255,0.03);">
+        <div style="padding:10px 12px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <div style="font-size:12px; color:var(--text-dim);">Extracted text</div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary" onclick="copyOcrText()">Copy</button>
+            <button class="btn btn-primary" onclick="useOcrText()">Use in input</button>
+          </div>
+        </div>
+        <div style="padding:12px;">
+          <textarea id="ocrText" placeholder="OCR output will appear here…" style="width:100%; min-height:260px; max-height:340px; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:#0f1830; color:var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; line-height:1.55;"></textarea>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1568,6 +1606,8 @@ function clearSelectedImage() {
   selectedImage = null;
   document.getElementById('imageInput').value = '';
   document.getElementById('imagePreview').classList.remove('active');
+  const ocrBtn = document.getElementById('ocrBtn');
+  if (ocrBtn) ocrBtn.disabled = true;
 }
 
 function handleImageSelect(event) {
@@ -1592,6 +1632,8 @@ function handleImageSelect(event) {
     document.getElementById('imageName').textContent = file.name;
     document.getElementById('imageInfo').textContent = `${file.type} · ${formatBytes(file.size)}`;
     document.getElementById('imagePreview').classList.add('active');
+    const ocrBtn = document.getElementById('ocrBtn');
+    if (ocrBtn) ocrBtn.disabled = false;
   };
   reader.readAsDataURL(file);
 }
@@ -2174,6 +2216,62 @@ function exportChat() {
   });
 }
 
+// --- OCR ---
+function openOcrModal() {
+  if (!selectedImage?.dataUrl) return;
+  document.getElementById('ocrPreviewImg').src = selectedImage.dataUrl;
+  document.getElementById('ocrText').value = '';
+  document.getElementById('ocrStatus').textContent = 'Ready';
+  document.getElementById('ocrModal').classList.add('active');
+}
+
+function closeOcrModal() {
+  document.getElementById('ocrModal').classList.remove('active');
+}
+
+async function runOcr() {
+  if (!selectedImage?.dataUrl) return;
+  const status = document.getElementById('ocrStatus');
+  status.textContent = 'Running…';
+
+  // Lazy-load Tesseract (client-side OCR)
+  if (!window.Tesseract) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Failed to load tesseract.js'));
+      document.head.appendChild(s);
+    });
+  }
+
+  try {
+    const { data } = await window.Tesseract.recognize(selectedImage.dataUrl, 'eng', {
+      logger: (m) => {
+        if (m.status === 'recognizing text') status.textContent = `Running… ${Math.round((m.progress || 0) * 100)}%`;
+      }
+    });
+    document.getElementById('ocrText').value = (data?.text || '').trim();
+    status.textContent = 'Done';
+  } catch (err) {
+    status.textContent = 'Failed';
+    alert('OCR failed: ' + (err?.message || err));
+  }
+}
+
+function copyOcrText() {
+  const txt = document.getElementById('ocrText').value || '';
+  navigator.clipboard.writeText(txt);
+}
+
+function useOcrText() {
+  const txt = document.getElementById('ocrText').value || '';
+  const input = document.getElementById('userInput');
+  input.value = (input.value ? (input.value + '\n') : '') + txt;
+  autoResize(input);
+  closeOcrModal();
+  input.focus();
+}
 
 </script>
 </body>
