@@ -6,24 +6,25 @@
 <title>API 聊天測試器</title>
 <style>
   :root {
-    --bg: #1a1a2e;
-    --surface: #16213e;
-    --surface2: #0f3460;
-    --accent: #e94560;
-    --accent2: #533483;
-    --text: #eee;
-    --text-dim: #999;
-    --border: #2a2a4a;
-    --user-bg: #533483;
-    --assistant-bg: #0f3460;
+    --bg: #0b1020;
+    --surface: #111a33;
+    --surface2: #182546;
+    --accent: #8ab4f8;
+    --accent2: #a78bfa;
+    --accent3: #5eead4;
+    --text: #eaf1ff;
+    --text-dim: #9fb0d0;
+    --border: #243457;
+    --user-bg: linear-gradient(135deg, #8ab4f8 0%, #a78bfa 100%);
+    --assistant-bg: #16213f;
     --radius: 12px;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: radial-gradient(1200px 800px at 80% -20%, rgba(138,180,248,0.18), transparent 60%), radial-gradient(1000px 700px at -20% 120%, rgba(167,139,250,0.16), transparent 60%), var(--bg);
     color: var(--text);
     height: 100vh;
     display: flex;
@@ -126,18 +127,20 @@
   }
 
   .btn-primary {
-    background: var(--accent);
-    color: white;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #0b1020;
+    box-shadow: 0 8px 20px rgba(138,180,248,0.25);
   }
 
-  .btn-primary:hover { opacity: 0.85; }
+  .btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); }
 
   .btn-secondary {
     background: var(--surface2);
     color: var(--text);
+    border: 1px solid var(--border);
   }
 
-  .btn-secondary:hover { background: var(--accent2); }
+  .btn-secondary:hover { border-color: var(--accent); }
 
   .btn-connect {
     width: 100%;
@@ -360,18 +363,19 @@
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: var(--accent);
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
     border: none;
-    color: white;
+    color: #0b1020;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
     flex-shrink: 0;
+    box-shadow: 0 10px 24px rgba(138,180,248,0.28);
   }
 
-  .send-btn:hover { transform: scale(1.05); }
+  .send-btn:hover { transform: scale(1.05) translateY(-1px); }
   .send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
   .send-btn svg { width: 20px; height: 20px; }
