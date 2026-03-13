@@ -1570,6 +1570,44 @@ function renderMarkdown(md) {
   return s;
 }
 
+function extractNameScore(rawText) {
+  const t = String(rawText || '').replace(/\r/g, '');
+
+  // Score patterns
+  const scoreMatch = t.match(/(?:分數|成績|得分)\s*[:：]?\s*(\d{1,3})/);
+  let score = scoreMatch ? parseInt(scoreMatch[1], 10) : null;
+  if (score !== null && (score < 0 || score > 100)) score = null;
+
+  // Name patterns (Chinese)
+  let name = null;
+  const nameMatch = t.match(/(?:姓名|學生姓名|名字)\s*[:：]?\s*([\u4e00-\u9fff]{2,6})/);
+  if (nameMatch) name = nameMatch[1];
+
+  // Fallback: first 2-6 Chinese chars on same line as score label, else first standalone Chinese token
+  if (!name) {
+    const lines = t.split('\n').map(s => s.trim()).filter(Boolean);
+    for (const line of lines) {
+      const m = line.match(/([\u4e00-\u9fff]{2,6}).*(?:分數|成績|得分)\s*[:：]?\s*(\d{1,3})/);
+      if (m) { name = m[1]; score = score ?? parseInt(m[2],10); break; }
+    }
+  }
+  if (!name) {
+    const token = t.match(/([\u4e00-\u9fff]{2,6})/);
+    if (token) name = token[1];
+  }
+
+  // Fallback score: first 0-100 integer if score label not found
+  if (score === null) {
+    const m = t.match(/\b(\d{1,3})\b/);
+    if (m) {
+      const v = parseInt(m[1],10);
+      if (v >= 0 && v <= 100) score = v;
+    }
+  }
+
+  return { name, score };
+}
+
 function addMessageEl(role, content, tokens) {
   const welcome = document.getElementById('welcome');
   if (welcome) welcome.style.display = 'none';
@@ -2284,12 +2322,14 @@ async function runOcr() {
   }
 
   try {
-    const { data } = await window.Tesseract.recognize(selectedImage.dataUrl, 'eng', {
+    const { data } = await window.Tesseract.recognize(selectedImage.dataUrl, 'chi_tra+eng', {
       logger: (m) => {
         if (m.status === 'recognizing text') status.textContent = `Running… ${Math.round((m.progress || 0) * 100)}%`;
       }
     });
-    document.getElementById('ocrText').value = (data?.text || '').trim();
+    const raw = (data?.text || '').trim();
+    const out = extractNameScore(raw);
+    document.getElementById('ocrText').value = `Name: ${out.name || ''}\nScore: ${out.score ?? ''}`.trim();
     status.textContent = 'Done';
   } catch (err) {
     status.textContent = 'Failed';
@@ -2450,20 +2490,22 @@ async function runLiveOcrFrame() {
     tmp.getContext('2d').drawImage(canvas, 0, 0, tw, th);
     const frameUrl = tmp.toDataURL('image/png');
 
-    const { data } = await window.Tesseract.recognize(frameUrl, 'eng', {
+    const { data } = await window.Tesseract.recognize(frameUrl, 'chi_tra+eng', {
       logger: () => {}
     });
 
-    const text = (data?.text || '').trim();
-    if (text && text !== lastOcrText) {
-      lastOcrText = text;
-      // Put into OCR textbox (so user can see) and also update input softly
+    const raw = (data?.text || '').trim();
+    const out = extractNameScore(raw);
+    const formatted = `Name: ${out.name || ''}\nScore: ${out.score ?? ''}`.trim();
+
+    if (formatted && formatted !== lastOcrText) {
+      lastOcrText = formatted;
       const ocrBox = document.getElementById('ocrText');
-      if (ocrBox) ocrBox.value = text;
+      if (ocrBox) ocrBox.value = formatted;
 
       const input = document.getElementById('userInput');
       if (input) {
-        input.value = text;
+        input.value = formatted;
         autoResize(input);
       }
     }
