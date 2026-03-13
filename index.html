@@ -855,7 +855,7 @@ async function tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, respon
         },
         generationConfig: {
           responseModalities: ['AUDIO'],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }, audioConfig: { audioEncoding: fmt === 'wav' ? 'LINEAR16' : 'MP3' } }
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         },
         contents: [{ role: 'user', parts: [{ text: `Read aloud exactly this transcript, audio only:\n\n${inputText}` }] }]
       }
@@ -868,7 +868,7 @@ async function tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, respon
         },
         generationConfig: {
           responseModalities: ['AUDIO'],
-          speechConfig: { audioConfig: { audioEncoding: fmt === 'wav' ? 'LINEAR16' : 'MP3' } }
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         },
         contents: [{ role: 'user', parts: [{ text: `Read aloud exactly this transcript, audio only:\n\n${inputText}` }] }]
       }
