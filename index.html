@@ -1058,13 +1058,8 @@ async function testConnection() {
 
         if (speechRes.status === 404) {
           const chatUrl = baseUrl + '/chat/completions';
-          const fallbackRes = await fetch(chatUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${key}`
-            },
-            body: JSON.stringify({
+          const testCandidates = [
+            {
               model,
               modalities: ['audio'],
               response_modalities: ['AUDIO'],
@@ -1072,11 +1067,40 @@ async function testConnection() {
               messages: [{ role: 'user', content: 'hi' }],
               temperature: 0,
               max_tokens: 16
-            })
-          });
-          if (!fallbackRes.ok) {
-            const err = await fallbackRes.json().catch(() => ({}));
-            throw new Error(err.error?.message || `HTTP ${fallbackRes.status}`);
+            },
+            {
+              model,
+              modalities: ['audio'],
+              audio: { voice: 'alloy', format: 'mp3' },
+              messages: [{ role: 'user', content: 'hi' }]
+            },
+            {
+              model,
+              modalities: ['AUDIO'],
+              audio: { voice: 'alloy', format: 'mp3' },
+              messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }]
+            }
+          ];
+
+          let okFallback = false;
+          let lastErr = null;
+          for (const payload of testCandidates) {
+            const fallbackRes = await fetch(chatUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${key}`
+              },
+              body: JSON.stringify(payload)
+            });
+            if (fallbackRes.ok) {
+              okFallback = true;
+              break;
+            }
+            lastErr = await fallbackRes.json().catch(() => ({}));
+          }
+          if (!okFallback) {
+            throw new Error(lastErr?.error?.message || 'fallback chat/completions 測試失敗');
           }
           setStatus('connected', '已連線 ✓');
           return;
@@ -1498,10 +1522,8 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
   if (res.status === 404) {
     const chatUrl = baseUrl + '/chat/completions';
     addMessageEl('system', `↪ fallback: ${chatUrl} (audio mode)`);
-    const chatRes = await fetch(chatUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({
+    const chatPayloadCandidates = [
+      {
         model,
         modalities: ['audio'],
         response_modalities: ['AUDIO'],
@@ -1509,15 +1531,47 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
         messages: [{ role: 'user', content: inputText }],
         temperature: 0,
         max_tokens: 1024
-      })
-    });
+      },
+      {
+        model,
+        modalities: ['audio'],
+        audio: { voice, format: response_format || 'mp3' },
+        messages: [{ role: 'user', content: inputText }],
+        max_tokens: 1024
+      },
+      {
+        model,
+        modalities: ['AUDIO'],
+        audio: { voice, format: response_format || 'mp3' },
+        messages: [{ role: 'user', content: [{ type: 'text', text: inputText }] }]
+      },
+      {
+        model,
+        response_modalities: ['AUDIO'],
+        audio: { voice, format: response_format || 'mp3' },
+        messages: [{ role: 'user', content: inputText }]
+      }
+    ];
 
-    if (!chatRes.ok) {
-      const chatErr = await chatRes.json().catch(() => ({}));
-      throw new Error(chatErr.error?.message || `HTTP ${chatRes.status}`);
+    let lastErr = null;
+    let data = null;
+    for (const payload of chatPayloadCandidates) {
+      const chatRes = await fetch(chatUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: JSON.stringify(payload)
+      });
+      if (chatRes.ok) {
+        data = await chatRes.json().catch(() => ({}));
+        break;
+      }
+      lastErr = await chatRes.json().catch(() => ({}));
     }
 
-    const data = await chatRes.json().catch(() => ({}));
+    if (!data) {
+      throw new Error(lastErr?.error?.message || 'fallback chat/completions 仍失敗（可能需要供應商專屬 TTS 參數）');
+    }
+
     const audioB64 = data?.choices?.[0]?.message?.audio?.data
       || data?.output?.[0]?.content?.find?.(c => c?.type === 'output_audio')?.audio?.data
       || data?.audio?.data
