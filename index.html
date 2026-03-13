@@ -1042,18 +1042,50 @@ async function testConnection() {
     } else {
       if (isTtsModel(model)) {
         const ttsEndpointOverride = (document.getElementById('ttsEndpoint')?.value || '').trim();
-        const url = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint) + '/audio/speech';
-        const res = await fetch(url, {
+        const baseUrl = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint);
+        const speechUrl = baseUrl + '/audio/speech';
+
+        const speechRes = await fetch(speechUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
           body: JSON.stringify({ model, voice: 'alloy', input: 'hi', response_format: 'mp3', speed: 1 })
         });
-        ok = res.ok;
-        if (!ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error?.message || `HTTP ${res.status}`);
+
+        if (speechRes.ok) {
+          setStatus('connected', '已連線 ✓');
+          return;
         }
+
+        if (speechRes.status === 404) {
+          const chatUrl = baseUrl + '/chat/completions';
+          const fallbackRes = await fetch(chatUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${key}`
+            },
+            body: JSON.stringify({
+              model,
+              modalities: ['audio'],
+              response_modalities: ['AUDIO'],
+              audio: { voice: 'alloy', format: 'mp3' },
+              messages: [{ role: 'user', content: 'hi' }],
+              temperature: 0,
+              max_tokens: 16
+            })
+          });
+          if (!fallbackRes.ok) {
+            const err = await fallbackRes.json().catch(() => ({}));
+            throw new Error(err.error?.message || `HTTP ${fallbackRes.status}`);
+          }
+          setStatus('connected', '已連線 ✓');
+          return;
+        }
+
+        const err = await speechRes.json().catch(() => ({}));
+        throw new Error(err.error?.message || `HTTP ${speechRes.status}`);
       }
+
       const finalEndpoint = resolveOpenAIChatUrl(endpoint);
       const res = await fetch(finalEndpoint, {
         method: 'POST',
