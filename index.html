@@ -20,6 +20,19 @@
     --radius: 12px;
   }
 
+  body.theme-light {
+    --bg: #f7f9ff;
+    --surface: #ffffff;
+    --surface2: #eef3ff;
+    --accent: #5c7cfa;
+    --accent2: #7c4dff;
+    --accent3: #00b8a9;
+    --text: #1d2a44;
+    --text-dim: #5d6f92;
+    --border: #d9e3f5;
+    --assistant-bg: #f1f5ff;
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
   body {
@@ -194,8 +207,9 @@
   }
 
   .topbar-left {
-    font-weight: 600;
+    font-weight: 700;
     font-size: 15px;
+    letter-spacing: 0.2px;
   }
 
   .token-badge {
@@ -294,6 +308,16 @@
     text-align: right;
   }
 
+  .message h1, .message h2, .message h3 { margin: 0.2em 0 0.45em; line-height: 1.35; }
+  .message h1 { font-size: 1.1rem; }
+  .message h2 { font-size: 1.02rem; }
+  .message h3 { font-size: 0.96rem; }
+  .message p { margin: 0.25em 0; }
+  .message ul { margin: 0.35em 0 0.35em 1.2em; }
+  .message code { background: rgba(138,180,248,0.16); padding: 0.12em 0.35em; border-radius: 6px; }
+  .message pre { background: rgba(15,24,48,0.95); border: 1px solid var(--border); border-radius: 10px; padding: 10px; overflow:auto; margin: 0.5em 0; }
+
+
   .typing-indicator {
     align-self: flex-start;
     padding: 12px 20px;
@@ -337,14 +361,17 @@
 
   /* Input Area */
   .input-area {
-    padding: 16px 24px;
+    margin: 0 16px 16px;
+    padding: 12px;
     background: color-mix(in srgb, var(--surface) 84%, #ffffff 16%);
-    border-top: 1px solid var(--border);
+    border: 1px solid var(--border);
+    border-radius: 20px;
     display: flex;
-    gap: 12px;
+    gap: 10px;
     align-items: flex-end;
     flex-shrink: 0;
     backdrop-filter: blur(8px);
+    box-shadow: 0 10px 26px rgba(0,0,0,0.18);
   }
 
   .input-area textarea {
@@ -512,7 +539,7 @@
 
 </style>
 </head>
-<body>
+<body class="theme-dark">
 
 <!-- Sidebar -->
 <div class="sidebar">
@@ -621,7 +648,9 @@
 <div class="main">
   <div class="topbar">
     <div class="topbar-left" id="modelDisplay">尚未選擇模型</div>
-    <div class="token-badge">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button class="btn btn-secondary" id="themeToggleBtn" onclick="toggleTheme()">☀️ Light</button>
+      <div class="token-badge">
       <div class="token-item token-prompt">
         <span class="label">提示：</span>
         <span class="value" id="tokenPrompt">0</span>
@@ -638,6 +667,7 @@
         <span class="label">預估費用：</span>
         <span class="value" id="tokenCost">$0.00</span>
       </div>
+    </div>
     </div>
   </div>
 
@@ -701,6 +731,20 @@ let totalCompletionTokens = 0;
 let isStreaming = false;
 let abortController = null;
 let selectedImage = null;
+
+function applyTheme(theme) {
+  const body = document.body;
+  body.classList.toggle('theme-light', theme === 'light');
+  body.classList.toggle('theme-dark', theme !== 'light');
+  localStorage.setItem('apiTester_theme', theme);
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = theme === 'light' ? '🌙 Dark' : '☀️ Light';
+}
+
+function toggleTheme() {
+  const isLight = document.body.classList.contains('theme-light');
+  applyTheme(isLight ? 'dark' : 'light');
+}
 
 // 預設 providers
 const PROVIDERS = {
@@ -1244,6 +1288,8 @@ document.getElementById('streamToggle').addEventListener('change', saveCurrentSe
 
 // 初始化時載入儲存設定
 window.addEventListener('load', () => {
+  const savedTheme = localStorage.getItem('apiTester_theme') || 'dark';
+  applyTheme(savedTheme);
   onProviderChange();
   syncTtsControlsVisibility();
 });
@@ -1429,6 +1475,29 @@ function splitMarkdownImageText(text) {
   return { text, imageUrl: null };
 }
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderMarkdown(md) {
+  let s = escapeHtml(md);
+  s = s.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+  s = s.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+  s = s.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\n```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+  s = s.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
+  s = s.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+  s = s.replace(/\n\n/g, '</p><p>');
+  s = '<p>' + s + '</p>';
+  return s;
+}
+
 function addMessageEl(role, content, tokens) {
   const welcome = document.getElementById('welcome');
   if (welcome) welcome.style.display = 'none';
@@ -1451,7 +1520,7 @@ function addMessageEl(role, content, tokens) {
     const parsed = splitMarkdownImageText(content);
     if (parsed.text) {
       const textEl = document.createElement('div');
-      textEl.textContent = parsed.text;
+      textEl.innerHTML = renderMarkdown(parsed.text);
       body.appendChild(textEl);
     }
     appendImageEl(body, parsed.imageUrl, 'generated image', !!parsed.text);
@@ -1461,7 +1530,7 @@ function addMessageEl(role, content, tokens) {
     const finalImageUrl = content.imageUrl || parsed.imageUrl;
     if (finalText) {
       const textEl = document.createElement('div');
-      textEl.textContent = finalText;
+      textEl.innerHTML = renderMarkdown(finalText);
       body.appendChild(textEl);
     }
     appendImageEl(body, finalImageUrl, 'uploaded image', !!finalText);
@@ -1843,7 +1912,7 @@ async function handleOpenAIStream(res) {
     bodyEl.innerHTML = '';
     if (fullText) {
       const textEl = document.createElement('div');
-      textEl.textContent = fullText;
+      textEl.innerHTML = renderMarkdown(fullText);
       bodyEl.appendChild(textEl);
     }
     if (imageUrl) {
@@ -1976,7 +2045,7 @@ async function handleAnthropicStream(res) {
 
         if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
           fullContent += parsed.delta.text;
-          bodyEl.textContent = fullContent;
+          bodyEl.innerHTML = renderMarkdown(fullContent);
           document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
         }
 
@@ -2004,7 +2073,7 @@ async function handleMessagesStream(res) {
     bodyEl.innerHTML = '';
     if (fullText) {
       const textEl = document.createElement('div');
-      textEl.textContent = fullText;
+      textEl.innerHTML = renderMarkdown(fullText);
       bodyEl.appendChild(textEl);
     }
     if (imageUrl) {
