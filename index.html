@@ -1169,7 +1169,8 @@ function appendAudioEl(container, audioUrl, filename = 'tts.mp3') {
   const audio = document.createElement('audio');
   audio.controls = true;
   audio.src = audioUrl;
-  audio.style.width = 'min(680px, 100%)';
+  audio.style.width = '100%';
+  audio.style.maxWidth = '980px';
   audio.style.display = 'block';
   wrap.appendChild(audio);
 
