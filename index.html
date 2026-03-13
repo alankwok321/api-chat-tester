@@ -850,18 +850,27 @@ async function tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, respon
     {
       endpoint: `${baseUrl}/models/${encodeURIComponent(model)}:generateContent`,
       body: {
+        systemInstruction: {
+          parts: [{ text: 'You are a TTS engine. Output AUDIO only. Do not output text, markdown, or JSON.' }]
+        },
         generationConfig: {
           responseModalities: ['AUDIO'],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }, audioConfig: { audioEncoding: fmt === 'wav' ? 'LINEAR16' : 'MP3' } }
         },
-        contents: [{ role: 'user', parts: [{ text: inputText }] }]
+        contents: [{ role: 'user', parts: [{ text: `Read aloud exactly this transcript, audio only:\n\n${inputText}` }] }]
       }
     },
     {
       endpoint: `${baseUrl.replace(/\/v1$/, '')}/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       body: {
-        generationConfig: { responseModalities: ['AUDIO'] },
-        contents: [{ role: 'user', parts: [{ text: inputText }] }]
+        systemInstruction: {
+          parts: [{ text: 'You are a TTS engine. Output AUDIO only. Do not output text, markdown, or JSON.' }]
+        },
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: { audioConfig: { audioEncoding: fmt === 'wav' ? 'LINEAR16' : 'MP3' } }
+        },
+        contents: [{ role: 'user', parts: [{ text: `Read aloud exactly this transcript, audio only:\n\n${inputText}` }] }]
       }
     }
   ];
