@@ -811,9 +811,25 @@ async function readErrorBody(res) {
   return { data, msg };
 }
 
+function renderEndpointDiagnostics(title, diagnostics = [], finalSuggestion = '') {
+  if (!diagnostics.length) return;
+  const lines = diagnostics.map((d, i) => {
+    const statusText = d.status ? `HTTP ${d.status}` : 'NO_HTTP';
+    const actionText = d.action ? ` | ${d.action}` : '';
+    const retryText = d.retry ? ' | retry' : '';
+    const msg = d.message ? `\n   ↳ ${d.message}` : '';
+    return `${i + 1}. ${d.endpoint} | ${statusText}${actionText}${retryText}${msg}`;
+  }).join('\n');
+
+  const hint = finalSuggestion ? `\n\n建議：${finalSuggestion}` : '';
+  const text = `🧪 ${title}\n已嘗試端點清單：\n${lines}${hint}`;
+  addMessageEl('system', text);
+}
+
 async function tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, voice, response_format, opts = {}) {
   const chatUrl = baseUrl + '/chat/completions';
   const isTestOnly = !!opts.testOnly;
+  const diagnostics = opts.diagnostics || [];
   const payloads = [
     {
       model,
@@ -857,12 +873,14 @@ async function tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, v
 
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        return { ok: true, data, chatUrl };
+        diagnostics.push({ endpoint: chatUrl, status: res.status, action: 'OK' });
+        return { ok: true, data, chatUrl, diagnostics };
       }
 
       const err = await readErrorBody(res);
       lastErr = err;
       const action = classifyFallbackAction(res.status, err.msg);
+      diagnostics.push({ endpoint: chatUrl, status: res.status, action, retry: action === 'RETRY' && retry < FALLBACK_MAX_RETRY_PER_ENDPOINT, message: err.msg });
       if (action === 'RETRY' && retry < FALLBACK_MAX_RETRY_PER_ENDPOINT) {
         retry += 1;
         await new Promise(r => setTimeout(r, 500));
@@ -872,7 +890,7 @@ async function tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, v
     }
   }
 
-  return { ok: false, error: lastErr?.msg || 'fallback chat/completions 失敗', chatUrl };
+  return { ok: false, error: lastErr?.msg || 'fallback chat/completions 失敗', chatUrl, diagnostics };
 }
 
 function saveProfile() {
@@ -1145,6 +1163,7 @@ async function testConnection() {
         const ttsEndpointOverride = (document.getElementById('ttsEndpoint')?.value || '').trim();
         const baseUrl = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint);
         const speechUrl = baseUrl + '/audio/speech';
+        const diagnostics = [];
 
         let speechRetry = 0;
         while (true) {
@@ -1155,12 +1174,15 @@ async function testConnection() {
           });
 
           if (speechRes.ok) {
+            diagnostics.push({ endpoint: speechUrl, status: speechRes.status, action: 'OK' });
+            renderEndpointDiagnostics('API Tester 診斷', diagnostics, '目前端點可用');
             setStatus('connected', '已連線 ✓');
             return;
           }
 
           const err = await readErrorBody(speechRes);
           const action = classifyFallbackAction(speechRes.status, err.msg);
+          diagnostics.push({ endpoint: speechUrl, status: speechRes.status, action, retry: action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT, message: err.msg });
 
           if (action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT) {
             speechRetry += 1;
@@ -1169,7 +1191,8 @@ async function testConnection() {
           }
 
           if (action === 'FALLBACK') {
-            const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, 'hi', 'alloy', 'mp3', { testOnly: true });
+            const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, 'hi', 'alloy', 'mp3', { testOnly: true, diagnostics });
+            renderEndpointDiagnostics('API Tester 診斷', fallback.diagnostics || diagnostics, fallback.ok ? '已自動切換到可用端點' : '請改模型或檢查 provider 端點相容');
             if (fallback.ok) {
               setStatus('connected', '已連線 ✓');
               return;
@@ -1177,6 +1200,7 @@ async function testConnection() {
             throw new Error(fallback.error || 'fallback chat/completions 測試失敗');
           }
 
+          renderEndpointDiagnostics('API Tester 診斷', diagnostics, '請檢查金鑰、模型與 payload 相容性');
           throw new Error(err.msg || `HTTP ${speechRes.status}`);
         }
       }
@@ -1584,6 +1608,7 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
   const ttsEndpointOverride = (document.getElementById('ttsEndpoint')?.value || '').trim();
   const baseUrl = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint);
   const speechUrl = baseUrl + '/audio/speech';
+  const diagnostics = [];
   addMessageEl('system', `📤 OpenAI 相容 TTS\n端點: ${speechUrl}\n模型: ${model}`);
 
   // 1) Try /audio/speech first (with controlled retry/fallback)
@@ -1596,6 +1621,8 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
     });
 
     if (res.ok) {
+      diagnostics.push({ endpoint: speechUrl, status: res.status, action: 'OK' });
+      renderEndpointDiagnostics('TTS 請求診斷', diagnostics, '目前端點可用');
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
       addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${response_format || 'mp3'}` });
@@ -1604,6 +1631,7 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
 
     const err = await readErrorBody(res);
     const action = classifyFallbackAction(res.status, err.msg);
+    diagnostics.push({ endpoint: speechUrl, status: res.status, action, retry: action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT, message: err.msg });
 
     if (action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT) {
       speechRetry += 1;
@@ -1613,8 +1641,9 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
     }
 
     if (action === 'FALLBACK') {
-      const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, voice, response_format, { testOnly: false });
+      const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, voice, response_format, { testOnly: false, diagnostics });
       addMessageEl('system', `↪ fallback: ${fallback.chatUrl} (audio mode)`);
+      renderEndpointDiagnostics('TTS 請求診斷', fallback.diagnostics || diagnostics, fallback.ok ? '已自動切換到可用端點' : '請改模型或檢查 provider 端點相容');
 
       if (!fallback.ok) {
         throw new Error(fallback.error || 'fallback chat/completions 仍失敗（可能需要供應商專屬 TTS 參數）');
@@ -1636,6 +1665,7 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
       return;
     }
 
+    renderEndpointDiagnostics('TTS 請求診斷', diagnostics, '請檢查金鑰、模型與 payload 相容性');
     throw new Error(err.msg || `HTTP ${res.status}`);
   }
 }
