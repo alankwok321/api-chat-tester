@@ -858,7 +858,7 @@ async function tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, respon
       }
     },
     {
-      endpoint: `${baseUrl}/beta/models/${encodeURIComponent(model)}:generateContent`,
+      endpoint: `${baseUrl.replace(/\/v1$/, '')}/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       body: {
         generationConfig: { responseModalities: ['AUDIO'] },
         contents: [{ role: 'user', parts: [{ text: inputText }] }]
