@@ -1472,6 +1472,7 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
       body: JSON.stringify({
         model,
         modalities: ['audio'],
+        response_modalities: ['AUDIO'],
         audio: { voice, format: response_format || 'mp3' },
         messages: [{ role: 'user', content: inputText }],
         temperature: 0,
