@@ -1283,65 +1283,20 @@ async function testConnection() {
         const ttsEndpointOverride = (document.getElementById('ttsEndpoint')?.value || '').trim();
         const baseUrl = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint);
         const speechUrl = baseUrl + '/audio/speech';
-        const diagnostics = [];
 
-        let speechRetry = 0;
-        while (true) {
-          const speechRes = await fetch(speechUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-            body: JSON.stringify({ model, voice: 'alloy', input: 'hi', response_format: 'mp3', speed: 1 })
-          });
+        const speechRes = await fetch(speechUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+          body: JSON.stringify({ model, voice: 'alloy', input: 'hi', response_format: 'mp3', speed: 1 })
+        });
 
-          if (speechRes.ok) {
-            diagnostics.push({ endpoint: speechUrl, status: speechRes.status, action: 'OK' });
-            renderEndpointDiagnostics('API Tester 診斷', diagnostics, '目前端點可用');
-            setStatus('connected', '已連線 ✓');
-            return;
-          }
-
+        if (!speechRes.ok) {
           const err = await readErrorBody(speechRes);
-          const action = classifyFallbackAction(speechRes.status, err.msg);
-          diagnostics.push({ endpoint: speechUrl, status: speechRes.status, action, retry: action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT, message: err.msg });
-
-          if (action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT) {
-            speechRetry += 1;
-            await new Promise(r => setTimeout(r, 500));
-            continue;
-          }
-
-          if (action === 'FALLBACK') {
-            const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, 'hi', 'alloy', 'mp3', { testOnly: true, diagnostics });
-            if (!fallback.ok) {
-              const rFallback = await tryResponsesAudioFallback(baseUrl, key, model, 'hi', 'alloy', 'mp3', { diagnostics });
-              if (rFallback.ok) {
-                renderEndpointDiagnostics('API Tester 診斷', rFallback.diagnostics || diagnostics, '已切換 /v1/responses 音訊端點');
-                setStatus('connected', '已連線 ✓');
-                return;
-              }
-
-              if (shouldTryGeminiNative(model, fallback.error || err.msg)) {
-                const gFallback = await tryGeminiNativeTtsFallback(baseUrl, key, model, 'hi', 'mp3', { diagnostics });
-                renderEndpointDiagnostics('API Tester 診斷', gFallback.diagnostics || diagnostics, gFallback.ok ? '已切換 Gemini native 音訊端點' : 'Gemini native 也失敗，請改模型或檢查 provider 對 Gemini 路由支援');
-                if (gFallback.ok) {
-                  setStatus('connected', '已連線 ✓');
-                  return;
-                }
-                throw new Error(gFallback.error || rFallback.error || fallback.error || 'fallback 測試失敗');
-              }
-            }
-
-            renderEndpointDiagnostics('API Tester 診斷', fallback.diagnostics || diagnostics, fallback.ok ? '已自動切換到可用端點' : '請改模型或檢查 provider 端點相容');
-            if (fallback.ok) {
-              setStatus('connected', '已連線 ✓');
-              return;
-            }
-            throw new Error(fallback.error || 'fallback chat/completions 測試失敗');
-          }
-
-          renderEndpointDiagnostics('API Tester 診斷', diagnostics, '請檢查金鑰、模型與 payload 相容性');
           throw new Error(err.msg || `HTTP ${speechRes.status}`);
         }
+
+        setStatus('connected', '已連線 ✓');
+        return;
       }
 
       const finalEndpoint = resolveOpenAIChatUrl(endpoint);
@@ -1747,92 +1702,22 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
   const ttsEndpointOverride = (document.getElementById('ttsEndpoint')?.value || '').trim();
   const baseUrl = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint);
   const speechUrl = baseUrl + '/audio/speech';
-  const diagnostics = [];
   addMessageEl('system', `📤 OpenAI 相容 TTS\n端點: ${speechUrl}\n模型: ${model}`);
 
-  // 1) Try /audio/speech first (with controlled retry/fallback)
-  let speechRetry = 0;
-  while (true) {
-    const res = await fetch(speechUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-      body: JSON.stringify({ model, voice, input: inputText, response_format, speed })
-    });
+  const res = await fetch(speechUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    body: JSON.stringify({ model, voice, input: inputText, response_format, speed })
+  });
 
-    if (res.ok) {
-      diagnostics.push({ endpoint: speechUrl, status: res.status, action: 'OK' });
-      renderEndpointDiagnostics('TTS 請求診斷', diagnostics, '目前端點可用');
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${response_format || 'mp3'}` });
-      return;
-    }
-
+  if (!res.ok) {
     const err = await readErrorBody(res);
-    const action = classifyFallbackAction(res.status, err.msg);
-    diagnostics.push({ endpoint: speechUrl, status: res.status, action, retry: action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT, message: err.msg });
-
-    if (action === 'RETRY' && speechRetry < FALLBACK_MAX_RETRY_PER_ENDPOINT) {
-      speechRetry += 1;
-      addMessageEl('system', `↻ 重試 /audio/speech (${speechRetry}/${FALLBACK_MAX_RETRY_PER_ENDPOINT})：${err.msg}`);
-      await new Promise(r => setTimeout(r, 500));
-      continue;
-    }
-
-    if (action === 'FALLBACK') {
-      const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, voice, response_format, { testOnly: false, diagnostics });
-      addMessageEl('system', `↪ fallback: ${fallback.chatUrl} (audio mode)`);
-      renderEndpointDiagnostics('TTS 請求診斷', fallback.diagnostics || diagnostics, fallback.ok ? '已自動切換到可用端點' : '請改模型或檢查 provider 端點相容');
-
-      if (!fallback.ok) {
-        const rFallback = await tryResponsesAudioFallback(baseUrl, key, model, inputText, voice, response_format, { diagnostics });
-        if (rFallback.ok) {
-          const data = rFallback.data || {};
-          const audioB64 = data?.output?.find?.(o => o?.type === 'output_audio')?.audio?.data
-            || data?.output?.[0]?.content?.find?.(c => c?.type === 'output_audio')?.audio?.data
-            || data?.audio?.data
-            || null;
-          if (audioB64) {
-            const fmt = (response_format || 'mp3').toLowerCase();
-            const mime = fmt === 'wav' ? 'audio/wav' : fmt === 'opus' ? 'audio/opus' : fmt === 'aac' ? 'audio/aac' : fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
-            renderEndpointDiagnostics('TTS 請求診斷', rFallback.diagnostics || diagnostics, '已切換 /v1/responses 音訊端點');
-            addMessageEl('assistant', { text: '（Responses TTS audio）', audioUrl: `data:${mime};base64,${audioB64}`, audioFilename: `tts.${fmt}` });
-            return;
-          }
-        }
-
-        if (shouldTryGeminiNative(model, fallback.error || err.msg)) {
-          const gFallback = await tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, response_format, { diagnostics });
-          renderEndpointDiagnostics('TTS 請求診斷', gFallback.diagnostics || diagnostics, gFallback.ok ? '已切換 Gemini native 音訊端點' : 'Gemini native 也失敗，請改模型或檢查 provider 路由');
-          if (gFallback.ok && gFallback.audioUrl) {
-            const fmt = (response_format || 'mp3').toLowerCase();
-            addMessageEl('assistant', { text: '（Gemini native TTS audio）', audioUrl: gFallback.audioUrl, audioFilename: `tts.${fmt}` });
-            return;
-          }
-          throw new Error(gFallback.error || rFallback.error || fallback.error || 'Gemini native fallback 失敗');
-        }
-        throw new Error(rFallback.error || fallback.error || 'fallback chat/completions 仍失敗（可能需要供應商專屬 TTS 參數）');
-      }
-
-      const data = fallback.data || {};
-      const audioB64 = data?.choices?.[0]?.message?.audio?.data
-        || data?.output?.[0]?.content?.find?.(c => c?.type === 'output_audio')?.audio?.data
-        || data?.audio?.data
-        || null;
-      if (!audioB64) {
-        throw new Error('fallback 成功但找不到 audio data（此端點可能不是 OpenAI audio chat 格式）');
-      }
-
-      const fmt = (response_format || 'mp3').toLowerCase();
-      const mime = fmt === 'wav' ? 'audio/wav' : fmt === 'opus' ? 'audio/opus' : fmt === 'aac' ? 'audio/aac' : fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
-      const objectUrl = `data:${mime};base64,${audioB64}`;
-      addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${fmt}` });
-      return;
-    }
-
-    renderEndpointDiagnostics('TTS 請求診斷', diagnostics, '請檢查金鑰、模型與 payload 相容性');
     throw new Error(err.msg || `HTTP ${res.status}`);
   }
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${response_format || 'mp3'}` });
 }
 
 async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
