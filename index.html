@@ -1444,28 +1444,64 @@ async function sendMessage() {
 
 async function sendOpenAITts(key, endpoint, model, inputText, voice, response_format, speed) {
   const ttsEndpointOverride = (document.getElementById('ttsEndpoint')?.value || '').trim();
-  const url = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint) + '/audio/speech';
-  addMessageEl('system', `📤 OpenAI 相容 TTS
-端點: ${url}
-模型: ${model}`);
+  const baseUrl = resolveOpenAIBaseUrl(ttsEndpointOverride || endpoint);
+  const speechUrl = baseUrl + '/audio/speech';
+  addMessageEl('system', `📤 OpenAI 相容 TTS\n端點: ${speechUrl}\n模型: ${model}`);
 
-  const res = await fetch(url, {
+  // 1) Try /audio/speech first
+  const res = await fetch(speechUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
     body: JSON.stringify({ model, voice, input: inputText, response_format, speed })
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    if (res.status === 404) {
-      throw new Error('HTTP 404：此端點可能不支援 /v1/audio/speech。可在 TTS 區塊填入獨立的 OpenAI TTS 端點。');
-    }
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
+  if (res.ok) {
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${response_format || 'mp3'}` });
+    return;
   }
 
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${response_format || 'mp3'}` });
+  // 2) Fallback: some providers expose TTS via /chat/completions audio mode
+  if (res.status === 404) {
+    const chatUrl = baseUrl + '/chat/completions';
+    addMessageEl('system', `↪ fallback: ${chatUrl} (audio mode)`);
+    const chatRes = await fetch(chatUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        modalities: ['text', 'audio'],
+        audio: { voice, format: response_format || 'mp3' },
+        messages: [{ role: 'user', content: inputText }],
+        temperature: 0,
+        max_tokens: 1024
+      })
+    });
+
+    if (!chatRes.ok) {
+      const chatErr = await chatRes.json().catch(() => ({}));
+      throw new Error(chatErr.error?.message || `HTTP ${chatRes.status}`);
+    }
+
+    const data = await chatRes.json().catch(() => ({}));
+    const audioB64 = data?.choices?.[0]?.message?.audio?.data
+      || data?.output?.[0]?.content?.find?.(c => c?.type === 'output_audio')?.audio?.data
+      || data?.audio?.data
+      || null;
+    if (!audioB64) {
+      throw new Error('fallback 成功但找不到 audio data（此端點可能不是 OpenAI audio chat 格式）');
+    }
+
+    const fmt = (response_format || 'mp3').toLowerCase();
+    const mime = fmt === 'wav' ? 'audio/wav' : fmt === 'opus' ? 'audio/opus' : fmt === 'aac' ? 'audio/aac' : fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
+    const objectUrl = `data:${mime};base64,${audioB64}`;
+    addMessageEl('assistant', { text: '（TTS audio）', audioUrl: objectUrl, audioFilename: `tts.${fmt}` });
+    return;
+  }
+
+  const err = await res.json().catch(() => ({}));
+  throw new Error(err.error?.message || `HTTP ${res.status}`);
 }
 
 async function sendOpenAI(key, endpoint, model, sysPrompt, temp, maxTok, doStream) {
