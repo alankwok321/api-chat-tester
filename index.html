@@ -835,6 +835,63 @@ function renderEndpointDiagnostics(title, diagnostics = [], finalSuggestion = ''
   addMessageEl('system', text);
 }
 
+function shouldTryGeminiNative(model, errMsg = '') {
+  const m = String(model || '').toLowerCase();
+  const msg = String(errMsg || '').toLowerCase();
+  return m.includes('gemini') || msg.includes('accepts the following combination of response modalities') || msg.includes('response modalities (text) is not supported');
+}
+
+async function tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, response_format, opts = {}) {
+  const diagnostics = opts.diagnostics || [];
+  const fmt = (response_format || 'mp3').toLowerCase();
+  const mime = fmt === 'wav' ? 'audio/wav' : fmt === 'opus' ? 'audio/ogg' : fmt === 'aac' ? 'audio/aac' : fmt === 'flac' ? 'audio/flac' : 'audio/mpeg';
+
+  const candidates = [
+    {
+      endpoint: `${baseUrl}/models/${encodeURIComponent(model)}:generateContent`,
+      body: {
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }, audioConfig: { audioEncoding: fmt === 'wav' ? 'LINEAR16' : 'MP3' } }
+        },
+        contents: [{ role: 'user', parts: [{ text: inputText }] }]
+      }
+    },
+    {
+      endpoint: `${baseUrl}/beta/models/${encodeURIComponent(model)}:generateContent`,
+      body: {
+        generationConfig: { responseModalities: ['AUDIO'] },
+        contents: [{ role: 'user', parts: [{ text: inputText }] }]
+      }
+    }
+  ];
+
+  let lastErr = null;
+  for (const c of candidates) {
+    const res = await fetch(c.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify(c.body)
+    });
+
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      diagnostics.push({ endpoint: c.endpoint, status: res.status, action: 'OK' });
+      const audioB64 = data?.candidates?.[0]?.content?.parts?.find?.(p => p?.inlineData?.data)?.inlineData?.data || data?.audio?.data || null;
+      if (audioB64) {
+        return { ok: true, audioUrl: `data:${mime};base64,${audioB64}`, diagnostics, endpoint: c.endpoint };
+      }
+      return { ok: false, error: 'Gemini native 成功但找不到 audio data', diagnostics, endpoint: c.endpoint };
+    }
+
+    const err = await readErrorBody(res);
+    lastErr = err;
+    diagnostics.push({ endpoint: c.endpoint, status: res.status, action: classifyFallbackAction(res.status, err.msg), message: err.msg });
+  }
+
+  return { ok: false, error: lastErr?.msg || 'Gemini native fallback 失敗', diagnostics };
+}
+
 async function tryChatCompletionsAudioFallback(baseUrl, key, model, inputText, voice, response_format, opts = {}) {
   const chatUrl = baseUrl + '/chat/completions';
   const isTestOnly = !!opts.testOnly;
@@ -1206,6 +1263,16 @@ async function testConnection() {
 
           if (action === 'FALLBACK') {
             const fallback = await tryChatCompletionsAudioFallback(baseUrl, key, model, 'hi', 'alloy', 'mp3', { testOnly: true, diagnostics });
+            if (!fallback.ok && shouldTryGeminiNative(model, fallback.error || err.msg)) {
+              const gFallback = await tryGeminiNativeTtsFallback(baseUrl, key, model, 'hi', 'mp3', { diagnostics });
+              renderEndpointDiagnostics('API Tester 診斷', gFallback.diagnostics || diagnostics, gFallback.ok ? '已切換 Gemini native 音訊端點' : 'Gemini native 也失敗，請改模型或檢查 provider 對 Gemini 路由支援');
+              if (gFallback.ok) {
+                setStatus('connected', '已連線 ✓');
+                return;
+              }
+              throw new Error(gFallback.error || fallback.error || 'fallback 測試失敗');
+            }
+
             renderEndpointDiagnostics('API Tester 診斷', fallback.diagnostics || diagnostics, fallback.ok ? '已自動切換到可用端點' : '請改模型或檢查 provider 端點相容');
             if (fallback.ok) {
               setStatus('connected', '已連線 ✓');
@@ -1660,6 +1727,16 @@ async function sendOpenAITts(key, endpoint, model, inputText, voice, response_fo
       renderEndpointDiagnostics('TTS 請求診斷', fallback.diagnostics || diagnostics, fallback.ok ? '已自動切換到可用端點' : '請改模型或檢查 provider 端點相容');
 
       if (!fallback.ok) {
+        if (shouldTryGeminiNative(model, fallback.error || err.msg)) {
+          const gFallback = await tryGeminiNativeTtsFallback(baseUrl, key, model, inputText, response_format, { diagnostics });
+          renderEndpointDiagnostics('TTS 請求診斷', gFallback.diagnostics || diagnostics, gFallback.ok ? '已切換 Gemini native 音訊端點' : 'Gemini native 也失敗，請改模型或檢查 provider 路由');
+          if (gFallback.ok && gFallback.audioUrl) {
+            const fmt = (response_format || 'mp3').toLowerCase();
+            addMessageEl('assistant', { text: '（Gemini native TTS audio）', audioUrl: gFallback.audioUrl, audioFilename: `tts.${fmt}` });
+            return;
+          }
+          throw new Error(gFallback.error || fallback.error || 'Gemini native fallback 失敗');
+        }
         throw new Error(fallback.error || 'fallback chat/completions 仍失敗（可能需要供應商專屬 TTS 參數）');
       }
 
