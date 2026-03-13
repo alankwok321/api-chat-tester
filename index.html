@@ -1208,6 +1208,9 @@ function addMessageEl(role, content, tokens) {
       body.appendChild(textEl);
     }
     appendImageEl(body, finalImageUrl, 'uploaded image', !!finalText);
+    if (content.audioUrl) {
+      appendAudioEl(body, content.audioUrl, content.audioFilename || 'tts.mp3');
+    }
   }
   div.appendChild(body);
 
