@@ -91,7 +91,9 @@
       <label class="block text-xs font-semibold text-gemini-muted tracking-wide">Model</label>
       <button type="button" onclick="fetchModelList()" class="text-xs font-semibold text-gemini-accent hover:text-gemini-accentHover">Get models</button>
      </div>
+     <select id="modelSelect" class="w-full bg-gemini-bg border border-gemini-border rounded-xl px-4 py-3 text-gemini-text focus:outline-none focus:border-gemini-accent focus:bg-white transition-colors hidden"></select>
      <input id="model" type="text" class="w-full bg-gemini-bg border border-gemini-border rounded-xl px-4 py-3 text-gemini-text focus:outline-none focus:border-gemini-accent focus:bg-white transition-colors placeholder-gemini-muted" placeholder="gpt-4o" list="modelList" />
+     <div class="text-[11px] text-gemini-muted mt-2">Tip: If model list is loaded, you can pick from dropdown; otherwise type manually.</div>
     </div>
 
     <div>
@@ -671,17 +673,45 @@ async function fetchModelList() {
 
 function updateModelDropdown(models) {
   const datalist = document.getElementById('modelList');
-  datalist.innerHTML = '';
-  
-  models.forEach(m => {
+  if (datalist) datalist.innerHTML = '';
+
+  // Fill datalist (kept for fallback/autocomplete)
+  (models || []).forEach(m => {
     const option = document.createElement('option');
     option.value = m;
-    datalist.appendChild(option);
+    datalist?.appendChild(option);
   });
-  
-  // 設定第一個模型為預設
-  if (models.length > 0) {
+
+  // Fill dropdown select (requested)
+  const sel = document.getElementById('modelSelect');
+  if (sel) {
+    sel.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Select a model…';
+    sel.appendChild(placeholder);
+
+    (models || []).forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      sel.appendChild(opt);
+    });
+
+    sel.classList.remove('hidden');
+    sel.onchange = () => {
+      if (!sel.value) return;
+      document.getElementById('model').value = sel.value;
+      updateModelDisplay();
+      syncTtsControlsVisibility();
+      saveCurrentSettings();
+    };
+  }
+
+  // Default to first model
+  if (models && models.length > 0) {
     document.getElementById('model').value = models[0];
+    if (sel) sel.value = models[0];
     updateModelDisplay();
   }
 }
