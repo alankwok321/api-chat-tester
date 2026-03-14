@@ -1,795 +1,233 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>API 聊天測試器</title>
-<style>
-  :root {
-    --bg: #0b1020;
-    --surface: #111a33;
-    --surface2: #182546;
-    --accent: #8ab4f8;
-    --accent2: #a78bfa;
-    --accent3: #5eead4;
-    --text: #eaf1ff;
-    --text-dim: #9fb0d0;
-    --border: #243457;
-    --user-bg: linear-gradient(135deg, #8ab4f8 0%, #a78bfa 100%);
-    --assistant-bg: #16213f;
-    --radius: 12px;
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>API Chat Tester - Gemini Style</title>
+ <script src="https://cdn.tailwindcss.com"></script>
+ <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+ <script>
+ tailwind.config = {
+  theme: {
+   extend: {
+    colors: {
+     gemini: {
+      bg: '#FFFFFF',
+      panel: '#F0F4F9',
+      hover: '#E1E5EA',
+      text: '#1F1F1F',
+      muted: '#444746',
+      border: '#E3E3E3',
+      accent: '#0B57D0',
+      accentHover: '#0842A0'
+     }
+    }
+   }
   }
-
-  body.theme-light {
-    --bg: #f7f9ff;
-    --surface: #ffffff;
-    --surface2: #eef3ff;
-    --accent: #5c7cfa;
-    --accent2: #7c4dff;
-    --accent3: #00b8a9;
-    --text: #1d2a44;
-    --text-dim: #5d6f92;
-    --border: #d9e3f5;
-    --assistant-bg: #f1f5ff;
+ }
+ </script>
+ <style>
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #E3E3E3; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: #C4C7C5; }
+  .gemini-gradient {
+   background: linear-gradient(90deg, #1A73E8, #EA4335);
+   -webkit-background-clip: text;
+   -webkit-text-fill-color: transparent;
   }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-
-  body {
-    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: radial-gradient(1200px 800px at 80% -20%, rgba(138,180,248,0.18), transparent 60%), radial-gradient(1000px 700px at -20% 120%, rgba(167,139,250,0.16), transparent 60%), var(--bg);
-    color: var(--text);
-    height: 100vh;
-    display: flex;
-    overflow: hidden;
-  }
-
-  /* Sidebar */
-  .sidebar {
-    width: 300px;
-    background: color-mix(in srgb, var(--surface) 88%, #ffffff 12%);
-    border-right: 1px solid var(--border);
-    backdrop-filter: blur(8px);
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-  }
-
-  .sidebar-header {
-    padding: 20px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 0.2px;
-  }
-
-  .sidebar-header span { color: var(--accent); filter: drop-shadow(0 0 8px rgba(138,180,248,0.35)); }
-
-  .sidebar-section {
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .sidebar-section label {
-    display: block;
-    font-size: 12px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-  }
-
-  .sidebar-section input,
-  .sidebar-section select,
-  .sidebar-section textarea {
-    width: 100%;
-    padding: 10px 12px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text);
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-
-  .sidebar-section input:focus,
-  .sidebar-section select:focus,
-  .sidebar-section textarea:focus {
-    border-color: var(--accent);
-  }
-
-  .sidebar-section textarea {
-    resize: vertical;
-    min-height: 60px;
-    font-family: inherit;
-  }
-
-  .sidebar-section select {
-    cursor: pointer;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23999'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 12px center;
-  }
-
-  .param-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-  }
-
-  .param-row input {
-    flex: 1;
-  }
-
-  .param-row input[type="number"] {
-    width: 80px;
-    flex: none;
-  }
-
-  .btn {
-    padding: 10px 16px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    transition: all 0.2s;
-  }
-
-  .btn-primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    color: #0b1020;
-    box-shadow: 0 8px 20px rgba(138,180,248,0.25);
-  }
-
-  .btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); }
-
-  .btn-secondary {
-    background: var(--surface2);
-    color: var(--text);
-    border: 1px solid var(--border);
-  }
-
-  .btn-secondary:hover { border-color: var(--accent); }
-
-  .btn-connect {
-    width: 100%;
-    margin-top: 12px;
-  }
-
-  .sidebar-footer {
-    margin-top: auto;
-    padding: 16px 20px;
-    border-top: 1px solid var(--border);
-    font-size: 12px;
-    color: var(--text-dim);
-  }
-
-  .status-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 6px;
-  }
-
-  .status-dot.connected { background: #4ade80; }
-  .status-dot.disconnected { background: #f87171; }
-  .status-dot.testing { background: #facc15; animation: pulse 1s infinite; }
-
-  @keyframes pulse {
-    50% { opacity: 0.4; }
-  }
-
-  /* Main Area */
-  .main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  /* Top Bar */
-  .topbar {
-    padding: 14px 24px;
-    background: color-mix(in srgb, var(--surface) 82%, #ffffff 18%);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-    backdrop-filter: blur(8px);
-  }
-
-  .topbar-left {
-    font-weight: 700;
-    font-size: 15px;
-    letter-spacing: 0.2px;
-  }
-
-  .token-badge {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 13px;
-  }
-
-  .token-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 12px;
-    background: var(--bg);
-    border-radius: 20px;
-    border: 1px solid var(--border);
-  }
-
-  .token-item .label { color: var(--text-dim); font-size: 11px; }
-  .token-item .value { font-weight: 700; font-variant-numeric: tabular-nums; }
-  .token-prompt .value { color: #60a5fa; }
-  .token-completion .value { color: #4ade80; }
-  .token-total .value { color: var(--accent); }
-  .token-cost .value { color: #facc15; }
-
-  /* Chat Area */
-  .chat-area {
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .chat-area::-webkit-scrollbar { width: 6px; }
-  .chat-area::-webkit-scrollbar-track { background: transparent; }
-  .chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-
-  .message {
-    max-width: 82%;
-    padding: 13px 16px;
-    border-radius: 16px;
-    line-height: 1.68;
-    font-size: 14px;
-    white-space: pre-wrap;
-    word-break: break-word;
-    position: relative;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.22);
-  }
-
-  .message.user {
-    align-self: flex-end;
-    background: var(--user-bg);
-    color: #0b1020;
-    border-bottom-right-radius: 6px;
-  }
-
-  .message.assistant {
-    align-self: flex-start;
-    background: linear-gradient(180deg, #18284f 0%, #142241 100%);
-    border: 1px solid rgba(138,180,248,0.18);
-    border-bottom-left-radius: 6px;
-  }
-
-  .message.system {
-    align-self: center;
-    background: transparent;
-    border: 1px dashed var(--border);
-    color: var(--text-dim);
-    font-size: 13px;
-    max-width: 90%;
-  }
-
-  .message.error {
-    align-self: center;
-    background: rgba(233, 69, 96, 0.15);
-    border: 1px solid var(--accent);
-    color: #f87171;
-    font-size: 13px;
-  }
-
-  .message .role-tag {
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-bottom: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .message .msg-tokens {
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-top: 6px;
-    text-align: right;
-  }
-
-  .message h1, .message h2, .message h3 { margin: 0.2em 0 0.45em; line-height: 1.35; }
-  .message h1 { font-size: 1.1rem; }
-  .message h2 { font-size: 1.02rem; }
-  .message h3 { font-size: 0.96rem; }
-  .message p { margin: 0.25em 0; }
-  .message ul { margin: 0.35em 0 0.35em 1.2em; }
-  .message code { background: rgba(138,180,248,0.16); padding: 0.12em 0.35em; border-radius: 6px; }
-  .message pre { background: rgba(15,24,48,0.95); border: 1px solid var(--border); border-radius: 10px; padding: 10px; overflow:auto; margin: 0.5em 0; }
-
-
-  .typing-indicator {
-    align-self: flex-start;
-    padding: 12px 20px;
-    background: var(--assistant-bg);
-    border-radius: var(--radius);
-    border-bottom-left-radius: 4px;
-    display: none;
-  }
-
-  .typing-indicator span {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    background: var(--text-dim);
-    border-radius: 50%;
-    margin: 0 2px;
-    animation: bounce 1.4s infinite;
-  }
-
-  .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-  .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-
-  @keyframes bounce {
-    0%, 60%, 100% { transform: translateY(0); }
-    30% { transform: translateY(-8px); }
-  }
-
-  /* Welcome screen */
-  .welcome {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-dim);
-    gap: 12px;
-  }
-
-  .welcome h2 { color: var(--text); font-size: 24px; }
-  .welcome p { font-size: 14px; max-width: 400px; text-align: center; line-height: 1.6; }
-
-  /* Input Area */
-  .input-area {
-    margin: 0 16px 16px;
-    padding: 12px;
-    background: color-mix(in srgb, var(--surface) 84%, #ffffff 16%);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-    flex-shrink: 0;
-    backdrop-filter: blur(8px);
-    box-shadow: 0 10px 26px rgba(0,0,0,0.18);
-  }
-
-  .input-area textarea {
-    flex: 1;
-    padding: 12px 16px;
-    background: #0f1830;
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    color: var(--text);
-    font-size: 14px;
-    font-family: inherit;
-    resize: none;
-    outline: none;
-    max-height: 150px;
-    min-height: 44px;
-    line-height: 1.5;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  .input-area textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(138,180,248,0.18); }
-
-  .send-btn {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    border: none;
-    color: #0b1020;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    flex-shrink: 0;
-    box-shadow: 0 10px 24px rgba(138,180,248,0.28);
-  }
-
-  .send-btn:hover { transform: scale(1.05) translateY(-1px); }
-  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-
-  .send-btn svg { width: 20px; height: 20px; }
-
-  .actions-row {
-    display: flex;
-    gap: 8px;
-    padding: 0 24px 8px;
-    background: var(--surface);
-  }
-
-  .actions-row .btn { font-size: 12px; padding: 6px 12px; }
-
-  .image-toolbar {
-    padding: 10px 24px 0;
-    background: var(--surface);
-  }
-
-  .image-preview {
-    display: none;
-    margin-top: 8px;
-    padding: 10px 12px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-  }
-
-  .image-preview.active {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .image-preview img {
-    width: 72px;
-    height: 72px;
-    object-fit: cover;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-  }
-
-  .image-meta {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .image-meta .name {
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .image-meta .sub {
-    font-size: 12px;
-    color: var(--text-dim);
-    margin-top: 4px;
-  }
-
-  .message-image-wrap {
-    display: inline-flex;
-    flex-direction: column;
-    gap: 8px;
-    align-items: flex-start;
-  }
-
-  .message-image-btn {
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: zoom-in;
-  }
-
-  .message-image-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .image-modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.82);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    padding: 24px;
-  }
-
-  .image-modal.active {
-    display: flex;
-  }
-
-  .image-modal-backdrop {
-    position: absolute;
-    inset: 0;
-  }
-
-  .image-modal-content {
-    position: relative;
-    max-width: min(92vw, 1100px);
-    max-height: 92vh;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    z-index: 1;
-  }
-
-  .image-modal-content img {
-    max-width: 100%;
-    max-height: calc(92vh - 60px);
-    object-fit: contain;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.12);
-    background: rgba(255,255,255,0.03);
-  }
-
-  .image-modal-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
-  /* Responsive */
-  @media (max-width: 768px) {
-    .sidebar { display: none; }
-    .message { max-width: 95%; }
-  }
-
-</style>
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+ </style>
 </head>
-<body class="theme-dark">
+<body class="bg-gemini-bg text-gemini-text h-screen flex overflow-hidden font-sans selection:bg-gemini-accent selection:text-white">
 
-<!-- Sidebar -->
-<div class="sidebar">
-  <div class="sidebar-header">
-    <span>⚡</span> API 聊天測試器
+ <!-- Sidebar -->
+ <aside class="hidden md:flex w-[320px] bg-gemini-panel flex-col transition-all duration-300 border-r border-gemini-border">
+  <div class="p-4 flex items-center justify-between">
+   <button class="p-2.5 hover:bg-gemini-hover rounded-full text-gemini-muted hover:text-gemini-text transition-colors">
+    <i class="fas fa-bars text-lg"></i>
+   </button>
+   <div class="text-xs text-gemini-muted">API Chat Tester</div>
   </div>
 
-  <div class="sidebar-section">
-    <label>API 提供商</label>
-    <select id="provider" onchange="onProviderChange()">
-      <option value="openai">OpenAI 相容 (/v1/chat/completions)</option>
-      <option value="anthropic">Anthropic 相容 (/v1/messages)</option>
-    </select>
+  <div class="px-4 pb-4">
+   <button class="flex items-center space-x-3 bg-gemini-bg hover:bg-gemini-hover border border-gemini-border px-4 py-3 rounded-full w-full transition-colors text-sm font-medium shadow-sm" onclick="clearChat()">
+    <i class="fas fa-plus text-gemini-muted"></i>
+    <span>New Test</span>
+   </button>
   </div>
 
-  <div class="sidebar-section">
-    <label>API 端點</label>
-    <input type="url" id="endpoint" placeholder="https://api.openai.com">
-  </div>
+  <div class="flex-1 overflow-y-auto px-4 py-2">
+   <h3 class="text-xs font-semibold text-gemini-muted mb-3 px-2 tracking-wide">API SETTINGS</h3>
 
-  <div class="sidebar-section">
-    <label>API 金鑰</label>
-    <div style="display:flex;gap:8px;">
-      <input type="password" id="apiKey" placeholder="sk-..." style="flex:1;">
-      <button class="btn btn-secondary" onclick="toggleApiKeyVisibility()" style="padding:10px 12px;width:auto;">👁</button>
-    </div>
-  </div>
-
-  <div class="sidebar-section">
-    <label>已儲存的設定</label>
-    <select id="savedProfiles" onchange="loadProfile()" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none;margin-bottom:8px;">
-      <option value="">-- 選擇已儲存的設定 --</option>
-    </select>
-    <div style="display:flex;gap:8px;">
-      <button class="btn btn-secondary" onclick="saveProfile()" style="flex:1;">💾 儲存設定</button>
-      <button class="btn btn-secondary" onclick="deleteProfile()" style="flex:1;">🗑 刪除</button>
-    </div>
-  </div>
-
-  <div class="sidebar-section">
-    <label>模型</label>
-    <div style="display:flex;gap:8px;">
-      <input type="text" id="model" value="gpt-4o" placeholder="gpt-4o" style="flex:1;" list="modelList">
-      <button class="btn btn-secondary" onclick="fetchModelList()" style="padding:10px 12px;width:auto;">🔄</button>
-    </div>
-    <datalist id="modelList"></datalist>
-  </div>
-
-  <div class="sidebar-section">
-    <label>系統提示詞（選填）</label>
-    <textarea id="systemPrompt" placeholder="你是一個有用的助手..."></textarea>
-  </div>
-
-  <div class="sidebar-section">
-    <label>參數</label>
-    <div class="param-row">
-      <input type="number" id="temperature" value="0.7" min="0" max="2" step="0.1" title="Temperature">
-      <input type="number" id="maxTokens" value="4096" min="1" max="200000" step="1" title="Max Tokens">
-    </div>
-    <div style="display:flex;gap:8px;margin-top:4px;">
-      <span style="flex:1;font-size:11px;color:var(--text-dim)">溫度</span>
-      <span style="flex:none;width:80px;font-size:11px;color:var(--text-dim)">最大 Tokens</span>
-    </div>
-    <div class="param-row" style="margin-top: 12px; align-items: center;">
-      <label style="margin:0;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text);text-transform:none;letter-spacing:0">
-        <input type="checkbox" id="streamToggle" checked> 串流回應
-      </label>
-    </div>
-  </div>
-
-  <div class="sidebar-section" id="ttsControls" style="display:none;">
-    <label>Text-to-Speech (TTS)</label>
-    <input type="url" id="ttsEndpoint" placeholder="(選填) TTS 專用端點，留空=沿用 API 端點" style="margin-bottom:8px;">
-    <div class="param-row">
-      <input type="text" id="ttsVoice" value="alloy" placeholder="voice (alloy)" title="Voice">
-      <select id="ttsFormat" title="Format">
-        <option value="mp3">mp3</option>
-        <option value="wav">wav</option>
-        <option value="opus">opus</option>
-        <option value="aac">aac</option>
-        <option value="flac">flac</option>
+   <div class="space-y-4 px-2">
+    <div>
+     <label class="block text-xs font-semibold text-gemini-muted mb-2 tracking-wide">Provider</label>
+     <div class="relative">
+      <select id="provider" onchange="onProviderChange()" class="w-full bg-gemini-bg border border-gemini-border hover:border-gemini-border rounded-xl px-4 py-3 text-gemini-text focus:outline-none focus:border-gemini-accent focus:bg-white appearance-none transition-colors">
+       <option value="openai">OpenAI 相容 (/v1/chat/completions)</option>
+       <option value="anthropic">Anthropic 相容 (/v1/messages)</option>
       </select>
-      <input type="number" id="ttsSpeed" value="1" min="0.25" max="4" step="0.05" title="Speed">
+      <i class="fas fa-chevron-down absolute right-4 top-4 text-gemini-muted pointer-events-none text-sm"></i>
+     </div>
     </div>
-    <div style="display:flex;gap:8px;margin-top:4px;">
-      <span style="flex:1;font-size:11px;color:var(--text-dim)">voice</span>
-      <span style="flex:1;font-size:11px;color:var(--text-dim)">format</span>
-      <span style="flex:none;width:80px;font-size:11px;color:var(--text-dim)">speed</span>
+
+    <div>
+     <label class="block text-xs font-semibold text-gemini-muted mb-2 tracking-wide">Endpoint</label>
+     <input id="endpoint" type="text" class="w-full bg-gemini-bg border border-gemini-border rounded-xl px-4 py-3 text-gemini-text focus:outline-none focus:border-gemini-accent focus:bg-white transition-colors placeholder-gemini-muted" placeholder="https://api.openai.com" />
     </div>
-    <p style="font-size:12px;color:var(--text-dim);margin-top:10px;line-height:1.4">當 model 是 TTS（例如 <code>gpt-4o-mini-tts</code> 或 <code>tts-1</code>）時，右下角送出會改成呼叫 <code>/v1/audio/speech</code>。若你的聊天端點不支援 TTS（常見 404），請填「TTS 專用端點」。</p>
+
+    <div>
+     <label class="block text-xs font-semibold text-gemini-muted mb-2 tracking-wide">API Key</label>
+     <div class="relative">
+      <input id="apiKey" type="password" class="w-full bg-gemini-bg border border-gemini-border rounded-xl px-4 py-3 text-gemini-text focus:outline-none focus:border-gemini-accent focus:bg-white transition-colors pr-12 placeholder-gemini-muted" placeholder="sk-..." />
+      <button onclick="toggleApiKeyVisibility()" type="button" class="absolute right-4 top-3 text-gemini-muted hover:text-gemini-text transition-colors"><i class="far fa-eye text-lg"></i></button>
+     </div>
+    </div>
+
+    <div>
+     <label class="block text-xs font-semibold text-gemini-muted mb-2 tracking-wide">Model</label>
+     <input id="model" type="text" class="w-full bg-gemini-bg border border-gemini-border rounded-xl px-4 py-3 text-gemini-text focus:outline-none focus:border-gemini-accent focus:bg-white transition-colors placeholder-gemini-muted" placeholder="gpt-4o" />
+    </div>
+
+    <div>
+     <label class="block text-xs font-semibold text-gemini-muted mb-2 tracking-wide">System Prompt (Optional)</label>
+     <textarea id="systemPrompt" rows="3" class="w-full bg-gemini-bg border border-gemini-border rounded-xl px-4 py-3 text-gemini-text focus:outline-none focus:border-gemini-accent focus:bg-white transition-colors resize-none placeholder-gemini-muted" placeholder="You are a helpful assistant..."></textarea>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+     <div>
+      <label class="block text-xs font-semibold text-gemini-muted mb-2 tracking-wide">Temp</label>
+      <input id="temperature" type="number" step="0.1" class="w-full bg-white border border-gemini-border rounded-xl px-3 py-2 text-gemini-text focus:outline-none focus:border-gemini-accent text-sm" />
+     </div>
+     <div>
+      <label class="block text-xs font-semibold text-gemini-muted mb-2 tracking-wide">Max Tokens</label>
+      <input id="maxTokens" type="number" class="w-full bg-white border border-gemini-border rounded-xl px-3 py-2 text-gemini-text focus:outline-none focus:border-gemini-accent text-sm" />
+     </div>
+    </div>
+
+    <div class="flex items-center justify-between">
+     <label class="flex items-center space-x-2 cursor-pointer">
+      <input id="streamToggle" type="checkbox" class="accent-gemini-accent" />
+      <span class="text-sm">Stream</span>
+     </label>
+     <button class="text-gemini-accent hover:text-gemini-accentHover text-sm font-medium" onclick="testConnection()" type="button"><i class="fas fa-plug mr-2"></i>Test</button>
+    </div>
+
+    <!-- TTS controls kept for JS IDs -->
+    <div class="hidden">
+      <input id="ttsEndpoint" /><select id="ttsVoice"></select><select id="ttsFormat"></select><input id="ttsSpeed" />
+      <select id="profile"></select>
+      <input id="pricePrompt" /><input id="priceCompletion" />
+    </div>
+   </div>
   </div>
 
-  <div class="sidebar-section">
-    <button class="btn btn-primary btn-connect" onclick="testConnection()">
-      🔌 測試連線
+  <div class="p-4 border-t border-gemini-border">
+   <div class="flex items-center justify-between text-xs text-gemini-muted">
+    <div><span class="inline-block w-2 h-2 rounded-full bg-red-500 mr-2"></span><span id="statusText">尚未連線</span></div>
+    <span id="statusDot" class="hidden"></span>
+   </div>
+  </div>
+ </aside>
+
+ <!-- Main Content -->
+ <main class="flex-1 flex flex-col relative bg-gemini-bg">
+  <header class="h-16 flex items-center justify-between px-4 lg:px-6 absolute top-0 w-full z-10 bg-gradient-to-b from-gemini-bg via-gemini-bg to-transparent">
+   <div class="flex items-center space-x-2">
+    <button class="md:hidden p-2 text-gemini-muted hover:text-gemini-text hover:bg-gemini-hover rounded-full transition-colors">
+     <i class="fas fa-bars"></i>
     </button>
-  </div>
-
-  <div class="sidebar-footer">
-    <span class="status-dot disconnected" id="statusDot"></span>
-    <span id="statusText">尚未連線</span>
-  </div>
-</div>
-
-<!-- Main -->
-<div class="main">
-  <div class="topbar">
-    <div class="topbar-left" id="modelDisplay">尚未選擇模型</div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <button class="btn btn-secondary" id="themeToggleBtn" onclick="toggleTheme()">☀️ Light</button>
-      <div class="token-badge">
-      <div class="token-item token-prompt">
-        <span class="label">提示：</span>
-        <span class="value" id="tokenPrompt">0</span>
-      </div>
-      <div class="token-item token-completion">
-        <span class="label">回覆：</span>
-        <span class="value" id="tokenCompletion">0</span>
-      </div>
-      <div class="token-item token-total">
-        <span class="label">總計：</span>
-        <span class="value" id="tokenTotal">0</span>
-      </div>
-      <div class="token-item token-cost">
-        <span class="label">預估費用：</span>
-        <span class="value" id="tokenCost">$0.00</span>
-      </div>
-    </div>
-    </div>
-  </div>
-
-  <div class="chat-area" id="chatArea">
-    <div class="welcome" id="welcome">
-      <h2>⚡ API 聊天測試器</h2>
-      <p>在左側欄設定你的 API 金鑰和端點，然後開始聊天來測試你的 API 連線。</p>
-      <p style="font-size:12px">支援 OpenAI、Anthropic 及任何 OpenAI 相容端點。</p>
-    </div>
-  </div>
-
-  <div class="typing-indicator" id="typing">
-    <span></span><span></span><span></span>
-  </div>
-
-  <div class="actions-row">
-    <button class="btn btn-secondary" onclick="clearChat()">🗑 清除</button>
-    <button class="btn btn-secondary" onclick="exportChat()">📋 匯出</button>
-  </div>
-
-  <div class="image-toolbar">
-    <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="handleImageSelect(event)">
-    <button class="btn btn-secondary" onclick="document.getElementById('imageInput').click()">🖼 上傳圖片</button>
-    <button class="btn btn-secondary" id="cameraBtn" onclick="openCameraModal()">📷 Camera</button>
-    <button class="btn btn-secondary" id="liveOcrToggleBtn" onclick="toggleLiveOcr()" disabled>▶ Live OCR</button>
-    <button class="btn btn-secondary" id="ocrBtn" onclick="openOcrModal()" disabled>🧾 OCR</button>
-    <div class="image-preview" id="imagePreview">
-      <img id="imageThumb" alt="preview">
-      <div class="image-meta">
-        <div class="name" id="imageName"></div>
-        <div class="sub" id="imageInfo"></div>
-      </div>
-      <button class="btn btn-secondary" onclick="clearSelectedImage()">移除</button>
-    </div>
-  </div>
-
-  <div class="input-area">
-    <textarea id="userInput" placeholder="輸入訊息... (Shift+Enter 換行)" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-    <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="22" y1="2" x2="11" y2="13"></line>
-        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-      </svg>
+    <button class="flex items-center space-x-2 text-lg font-medium text-gemini-text hover:bg-gemini-panel px-3 py-1.5 rounded-xl transition-colors">
+     <span id="modelDisplay">尚未選擇模型</span>
+     <i class="fas fa-caret-down text-gemini-muted text-sm"></i>
     </button>
-  </div>
-</div>
+   </div>
 
-<!-- Camera Modal -->
-<div class="image-modal" id="cameraModal" aria-hidden="true">
-  <div class="image-modal-backdrop" onclick="closeCameraModal()"></div>
-  <div class="image-modal-content">
-    <div class="image-modal-toolbar" style="justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <strong style="font-size:14px;">📷 Camera</strong>
-        <span style="font-size:12px;color:var(--text-dim);" id="cameraStatus">Idle</span>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-secondary" onclick="captureCameraFrame()">Capture</button>
-        <button class="btn btn-secondary" onclick="closeCameraModal()">✕ Close</button>
-      </div>
+   <div class="flex items-center space-x-2 sm:space-x-3 text-sm">
+    <div class="hidden lg:flex items-center space-x-3 text-gemini-muted bg-gemini-panel px-4 py-1.5 rounded-full border border-gemini-border">
+     <span>Prompt: <strong class="text-gemini-text font-medium" id="tokenPrompt">0</strong></span>
+     <span class="text-gemini-border">|</span>
+     <span>Completion: <strong class="text-gemini-text font-medium" id="tokenCompletion">0</strong></span>
+     <span class="text-gemini-border">|</span>
+     <span>Total: <strong class="text-gemini-text font-medium" id="tokenTotal">0</strong></span>
+     <span class="text-gemini-border">|</span>
+     <span>Cost: <strong class="text-gemini-text font-medium" id="tokenCost">$0.00</strong></span>
     </div>
-    <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; background: rgba(255,255,255,0.03);">
-      <div style="padding:10px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--text-dim); display:flex; justify-content:space-between; align-items:center;">
-        <span>Live preview</span>
-        <span style="font-variant-numeric: tabular-nums;" id="liveOcrSmall">Live OCR: OFF</span>
-      </div>
-      <div style="padding:12px; display:flex; justify-content:center; align-items:center; min-height:320px;">
-        <video id="cameraVideo" autoplay playsinline style="width:100%; max-width:860px; border-radius:10px; border:1px solid var(--border); background:#000;"></video>
-      </div>
-    </div>
-    <canvas id="cameraCanvas" width="1280" height="720" style="display:none"></canvas>
-  </div>
-</div>
+    <button class="hidden sm:block text-gemini-muted hover:text-gemini-text p-2 hover:bg-gemini-panel rounded-full transition-colors" title="Export" onclick="exportChat()"><i class="fas fa-file-export"></i></button>
+    <button class="hidden sm:block text-gemini-muted hover:text-gemini-text p-2 hover:bg-gemini-panel rounded-full transition-colors" title="Clear" onclick="clearChat()"><i class="fas fa-trash-alt"></i></button>
+   </div>
+  </header>
 
-<!-- OCR Modal -->
-<div class="image-modal" id="ocrModal" aria-hidden="true">
-  <div class="image-modal-backdrop" onclick="closeOcrModal()"></div>
-  <div class="image-modal-content">
-    <div class="image-modal-toolbar" style="justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <strong style="font-size:14px;">🧾 OCR (Extract Text)</strong>
-        <span style="font-size:12px;color:var(--text-dim);" id="ocrStatus">Ready</span>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn btn-secondary" onclick="runOcr()">Run OCR</button>
-        <button class="btn btn-secondary" onclick="closeOcrModal()">✕ Close</button>
-      </div>
+  <div class="flex-1 overflow-y-auto pt-20 px-4 md:px-8 lg:px-32 pb-6" id="chatArea">
+   <div class="h-full flex flex-col items-center justify-center max-w-3xl mx-auto w-full -mt-10" id="welcome">
+    <h1 class="text-4xl sm:text-[56px] font-semibold mb-2 sm:mb-4 gemini-gradient tracking-tight">Hello, Developer</h1>
+    <p class="text-lg sm:text-2xl text-gemini-muted font-medium text-center px-4">Configure your endpoint and start testing your API.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8 sm:mt-12 w-full max-w-2xl px-4">
+     <button onclick="/* sidebar only on desktop */" class="bg-gemini-panel hover:bg-gemini-hover border border-gemini-border p-4 sm:p-5 rounded-2xl text-left transition-colors flex flex-col group shadow-sm">
+      <div class="bg-gemini-bg w-10 h-10 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm"><i class="fas fa-key text-gemini-accent text-lg"></i></div>
+      <span class="text-gemini-text font-medium">Configure API Key</span>
+      <span class="text-gemini-muted text-sm mt-1">Set up your provider securely</span>
+     </button>
+     <button onclick="/* sidebar only on desktop */" class="bg-gemini-panel hover:bg-gemini-hover border border-gemini-border p-4 sm:p-5 rounded-2xl text-left transition-colors flex flex-col group shadow-sm">
+      <div class="bg-gemini-bg w-10 h-10 rounded-full flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-sm"><i class="fas fa-sliders-h text-gemini-accent text-lg"></i></div>
+      <span class="text-gemini-text font-medium">Adjust Parameters</span>
+      <span class="text-gemini-muted text-sm mt-1">Tweak temperature and tokens</span>
+     </button>
     </div>
-    <div style="display:grid;grid-template-columns: minmax(240px, 1fr) minmax(240px, 1fr); gap:12px;">
-      <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; background: rgba(255,255,255,0.03);">
-        <div style="padding:10px 12px; border-bottom:1px solid var(--border); font-size:12px; color:var(--text-dim);">Preview</div>
-        <div style="padding:12px; display:flex; justify-content:center; align-items:center; min-height:260px;">
-          <img id="ocrPreviewImg" alt="ocr preview" style="max-width:100%; max-height:320px; object-fit:contain; border-radius:10px; border:1px solid var(--border);" />
-        </div>
-      </div>
-      <div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; background: rgba(255,255,255,0.03);">
-        <div style="padding:10px 12px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:8px;">
-          <div style="font-size:12px; color:var(--text-dim);">Extracted text</div>
-          <div style="display:flex; gap:8px;">
-            <button class="btn btn-secondary" onclick="copyOcrText()">Copy</button>
-            <button class="btn btn-primary" onclick="useOcrText()">Use in input</button>
-          </div>
-        </div>
-        <div style="padding:12px;">
-          <textarea id="ocrText" placeholder="OCR output will appear here…" style="width:100%; min-height:260px; max-height:340px; padding:12px 14px; border-radius:12px; border:1px solid var(--border); background:#0f1830; color:var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:12px; line-height:1.55;"></textarea>
-        </div>
-      </div>
-    </div>
+   </div>
   </div>
-</div>
 
-<div class="image-modal" id="imageModal" aria-hidden="true">
-  <div class="image-modal-backdrop" onclick="closeImageModal()"></div>
-  <div class="image-modal-content">
-    <div class="image-modal-toolbar">
-      <a class="btn btn-secondary" id="imageModalDownload" download="generated-image.png">⬇ 下載</a>
-      <button class="btn btn-secondary" onclick="closeImageModal()">✕ 關閉</button>
+  <div class="px-2 sm:px-4 lg:px-32 pb-6 sm:pb-8 w-full">
+   <div class="max-w-4xl mx-auto relative">
+    <div class="bg-gemini-panel rounded-[32px] p-2 flex items-end shadow-md focus-within:bg-white focus-within:shadow-lg transition-all duration-300 border border-transparent focus-within:border-gemini-border">
+     <input type="file" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="handleImageSelect(event)">
+     <button class="p-3 text-gemini-muted hover:text-gemini-text hover:bg-gemini-hover rounded-full transition-colors mb-0.5 ml-1 flex-shrink-0" title="Upload Image" onclick="document.getElementById('imageInput').click()"><i class="far fa-image text-xl"></i></button>
+
+     <div class="flex-1 relative min-h-[52px] flex items-center py-3 px-2 sm:px-3">
+      <textarea id="userInput" rows="1" class="w-full bg-transparent text-gemini-text placeholder-gemini-muted resize-none outline-none max-h-52 text-base no-scrollbar" placeholder="Enter a prompt here..." onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+     </div>
+
+     <button class="flex-shrink-0 p-3 bg-gemini-text hover:bg-black text-white rounded-full transition-colors mb-1 mr-1 sm:mr-2 flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 shadow hover:scale-105 active:scale-95 duration-200" id="sendBtn" onclick="sendMessage()" title="Send">
+      <i class="fas fa-arrow-up text-lg"></i>
+     </button>
     </div>
-    <img id="imageModalImg" alt="preview enlarged">
-  </div>
-</div>
 
+    <div class="text-center mt-3 text-[11px] sm:text-xs text-gemini-muted px-4">
+     API Chat Tester · Compatible with OpenAI, Anthropic, and TTS models. Keys are stored locally.
+    </div>
+
+    <!-- Hidden blocks to satisfy existing JS that expects these elements -->
+    <div class="hidden">
+      <button id="themeToggleBtn"></button>
+      <select id="savedProfiles"></select>
+      <select id="modelList"></select>
+      <div id="ttsControls"></div>
+      <button id="ocrBtn"></button>
+      <div id="ocrModal"></div>
+      <img id="ocrPreviewImg" />
+      <span id="ocrStatus"></span>
+      <textarea id="ocrText"></textarea>
+      <div id="cameraModal"></div>
+      <video id="cameraVideo"></video>
+      <canvas id="cameraCanvas"></canvas>
+      <span id="cameraStatus"></span>
+      <span id="liveOcrSmall"></span>
+      <button id="liveOcrToggleBtn"></button>
+
+      <div id="typing"></div>
+      <div class="actions-row"><button></button><button></button></div>
+      <div class="image-toolbar"></div>
+      <div class="image-preview" id="imagePreview"></div>
+      <img id="imageThumb" /><div id="imageName"></div><div id="imageInfo"></div>
+      <div class="image-modal" id="imageModal"></div>
+      <a id="imageModalDownload"></a>
+      <img id="imageModalImg" />
+    </div>
+   </div>
+  </div>
+ </main>
 <script>
 // State
 let messages = [];
